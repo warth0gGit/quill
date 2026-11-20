@@ -52,17 +52,20 @@ fn library_path(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn save_document(app: tauri::AppHandle, file_name: String, contents: String) -> Result<(), String> {
+/// Saves into the Inbox and returns the file's full path (for "Show in File Explorer").
+fn save_document(app: tauri::AppHandle, file_name: String, contents: String) -> Result<String, String> {
     if !valid_file_name(&file_name) {
         return Err(format!("Refused to save an unexpected file name: {file_name}"));
     }
     let path = ensure_library(&app)?.join("Inbox").join(&file_name);
-    write_atomically(&path, &contents).map_err(|e| format!("Couldn't save {file_name}: {e}"))
+    write_atomically(&path, &contents).map_err(|e| format!("Couldn't save {file_name}: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             ensure_library(app.handle()).map_err(Box::<dyn std::error::Error>::from)?;
             Ok(())
