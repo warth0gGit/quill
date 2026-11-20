@@ -115,7 +115,8 @@ editor.on("transaction", () => requestAnimationFrame(placeCaret));
 editor.on("focus", placeCaret);
 editor.on("blur", () => caret.classList.remove("on"));
 
-editor.view.dom.addEventListener("keydown", () => {
+editor.view.dom.addEventListener("keydown", (e) => {
+  if (e.key === "Alt") return; // Alt alone toggles the top shelf (below)
   document.body.classList.add("typing");
   clearTimeout(typingTimer);
   typingTimer = window.setTimeout(() => document.body.classList.remove("typing"), 600);
@@ -333,34 +334,72 @@ function updateCrumb() {
 
 let topTimer: number | undefined;
 let bottomTimer: number | undefined;
+// On Windows the top few pixels of a borderless window belong to the resize
+// edge, so the page never hears the mouse there. A quick flick to the top
+// can skip the band below it entirely, so leaving the page through the top
+// (or bottom) edge counts as arriving there. Alt also shows the top shelf.
+const TOP_BAND = 44;
+const BOTTOM_BAND = 56;
+let topByKey = false;
+
+function showTop() {
+  clearTimeout(topTimer);
+  updateCrumb();
+  top.classList.add("on");
+}
+function showBottom() {
+  clearTimeout(bottomTimer);
+  shelf.classList.add("on");
+}
 function hideShelves() {
   clearTimeout(topTimer);
   clearTimeout(bottomTimer);
+  topByKey = false;
   shelf.classList.remove("on");
   if (menu.hidden) top.classList.remove("on");
 }
 addEventListener("mousemove", (e) => {
   const nothingSelected = editor.state.selection.empty;
-  if (e.clientY < 44 && nothingSelected) {
-    clearTimeout(topTimer);
-    updateCrumb();
-    top.classList.add("on");
-  } else if (top.classList.contains("on") && !top.matches(":hover") && menu.hidden) {
+  if (e.clientY < TOP_BAND && nothingSelected) {
+    showTop();
+  } else if (top.matches(":hover")) {
+    topByKey = false; // reached it; from here it behaves as if hovered in
+  } else if (top.classList.contains("on") && menu.hidden && !topByKey) {
     clearTimeout(topTimer);
     topTimer = window.setTimeout(() => top.classList.remove("on"), 400);
   }
-  if (e.clientY > innerHeight - 56 && nothingSelected) {
-    clearTimeout(bottomTimer);
-    shelf.classList.add("on");
+  if (e.clientY > innerHeight - BOTTOM_BAND && nothingSelected) {
+    showBottom();
   } else if (shelf.classList.contains("on") && !shelf.matches(":hover")) {
     clearTimeout(bottomTimer);
     bottomTimer = window.setTimeout(() => shelf.classList.remove("on"), 350);
   }
 });
-document.documentElement.addEventListener("mouseleave", () => {
-  topTimer = window.setTimeout(() => menu.hidden && top.classList.remove("on"), 400);
-  bottomTimer = window.setTimeout(() => shelf.classList.remove("on"), 400);
+document.documentElement.addEventListener("mouseleave", (e) => {
+  const nothingSelected = editor.state.selection.empty;
+  if (e.clientY < TOP_BAND && nothingSelected) showTop();
+  else if (!topByKey) topTimer = window.setTimeout(() => menu.hidden && top.classList.remove("on"), 400);
+  if (e.clientY > innerHeight - BOTTOM_BAND && nothingSelected) showBottom();
+  else bottomTimer = window.setTimeout(() => shelf.classList.remove("on"), 400);
 });
+
+// Alt on its own shows or hides the top shelf, like a menu bar in Windows.
+let altAlone = false;
+addEventListener("keydown", (e) => {
+  altAlone = e.key === "Alt" && !e.repeat ? true : e.key === "Alt" ? altAlone : false;
+});
+addEventListener("keyup", (e) => {
+  if (e.key !== "Alt" || !altAlone) return;
+  altAlone = false;
+  e.preventDefault();
+  if (top.classList.contains("on")) {
+    hideShelves();
+  } else {
+    showTop();
+    topByKey = true;
+  }
+});
+addEventListener("mousedown", () => (altAlone = false));
 
 /* ------------------------------------------------------------ document settings */
 
@@ -515,6 +554,8 @@ addEventListener("keydown", (e) => {
     openPrint();
   } else if (e.key === "Escape" && !menu.hidden) {
     menu.hidden = true;
+  } else if (e.key === "Escape" && top.classList.contains("on")) {
+    hideShelves();
   }
 });
 
