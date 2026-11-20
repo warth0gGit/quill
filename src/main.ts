@@ -86,6 +86,8 @@ editor.view.dom.addEventListener("keydown", () => {
 
 /* --------------------------------------------------------------- toolbars */
 
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
+
 const INK_LABEL: Record<InkRole, string> = {
   graphite: "Graphite",
   midnight: "Midnight",
@@ -120,9 +122,9 @@ function bar(className: string, label: string) {
 // Float: appears above a selection and formats only that selection.
 const F = bar("float", "Format selection");
 const float = F.el;
-F.add("<b>B</b>", "Bold (Ctrl+B)", () => editor.chain().focus().toggleBold().run(), "bold");
-F.add("<i>I</i>", "Italic (Ctrl+I)", () => editor.chain().focus().toggleItalic().run(), "italic");
-F.add("<s>S</s>", "Strike-through (Ctrl+Shift+X)", () => editor.chain().focus().toggleStrike().run(), "strike");
+F.add("<b>B</b>", `Bold (${MOD}+B)`, () => editor.chain().focus().toggleBold().run(), "bold");
+F.add("<i>I</i>", `Italic (${MOD}+I)`, () => editor.chain().focus().toggleItalic().run(), "italic");
+F.add("<s>S</s>", `Strike-through (${MOD}+Shift+X)`, () => editor.chain().focus().toggleStrike().run(), "strike");
 F.sep();
 const SIZE_BTNS: [string, SizeRole | null, number][] = [
   ["Small", "small", 11],
