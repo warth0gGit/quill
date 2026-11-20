@@ -1,11 +1,9 @@
 # Quill
 
-A calm, distraction-free writing app for Windows and Mac. Most of the time the screen
+A calm, distraction-free writing app for Windows. A Mac version will follow. Most of the time the screen
 shows nothing but your words and a softly glowing blue cursor.
 
 ## Install
-
-### Windows
 
 1. Open the [Build workflow](../../actions/workflows/build.yml) and click the latest green run.
 2. Download **Quill-Windows-installer** from the bottom of the page and unzip it.
@@ -14,14 +12,6 @@ shows nothing but your words and a softly glowing blue cursor.
 Windows may warn that the installer is from an unknown publisher, because it isn't
 code-signed yet. Choose **More info**, then **Run anyway**.
 
-### Mac
-
-1. From the same run, download **Quill-Mac-disk-image**, unzip it and open the `.dmg`.
-2. Drag Quill into Applications.
-3. The first time you open it, macOS says it can't check the developer. Open
-   **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
-   You only need to do this once. The DMG can be passed on to other Mac users the same way.
-
 ## Using it
 
 - Quill opens straight to a fresh page. Just type.
@@ -29,7 +19,7 @@ code-signed yet. Choose **More info**, then **Run anyway**.
   four sizes (Small, Body, Large, Title) and five colours.
 - Move the mouse to the bottom edge of the window for the Shelf. It sets the text
   size of the whole document, and the style of the next words you type.
-- **Ctrl+N** (Cmd+N on a Mac) starts a new page. Saving is automatic.
+- **Ctrl+N** starts a new page. Saving is automatic.
 
 ## Where your writing lives
 

@@ -56,28 +56,3 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
 
-  macos:
-    name: Mac disk image
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - run: npm ci
-      # One app that runs natively on both Apple Silicon and Intel Macs.
-      # Ad-hoc signed only (no Apple Developer account yet), so the first
-      # launch needs "Open Anyway" in System Settings > Privacy & Security.
-      - run: npx tauri build --target universal-apple-darwin --bundles dmg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Quill-Mac-disk-image
-          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-          if-no-files-found: error
