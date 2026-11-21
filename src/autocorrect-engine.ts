@@ -13,7 +13,7 @@
  * Then the first word of a sentence gets its capital letter.
  */
 import { FIXES, ABBREVIATIONS } from "./autocorrect-list";
-import { guessWord, rethinkWord, rethinkAfter, buildIndex, type Lexicon } from "./autocorrect-guess";
+import { guessWord, rethinkWord, rethinkAfter, rethinkShort, buildIndex, type Lexicon } from "./autocorrect-guess";
 
 /** Common words in order, most used first (filled in once the list loads). */
 let rank: Map<string, number> | null = null;
@@ -141,7 +141,7 @@ export function correct(before: string, word: string, ender: string): Correction
     } else if (casing === "lower" && lex && /^[a-z]+$/.test(lower)) {
       // A capital the writer typed themselves usually means a name: no guessing.
       const p = previousWord(before);
-      const g = guessWord(lower, p, lex) ?? (p ? rethinkAfter(p, lower, lex) : null);
+      const g = guessWord(lower, p, lex) ?? (p ? rethinkAfter(p, lower, lex) : null) ?? (lex.notReal.has(lower) ? rethinkShort(lower, null, null, lex) : null);
       if (g) out = applyCasing(g, casing);
     }
   }
@@ -180,10 +180,14 @@ export function correctPrevious(before: string, word: string, next: string): str
   let out: string | null = null;
   if (lower === "its" && ITS_NEXT.has(n)) out = "it's";
   else if (lower === "lets" && LETS_NEXT.has(n)) out = "let's";
-  else if (lex && casingOf(plain) === "lower" && /^[a-z]+$/.test(lower)) {
+  // A capital Quill added itself (the first word of a sentence) isn't a sign of a name.
+  else if (lex && (casingOf(plain) === "lower" || (casingOf(plain) === "title" && startsSentence(before))) && /^[a-z]+$/.test(lower)) {
     // Unknown words that weren't sure enough alone get a second look with the
     // word after them too ("wnht it" -> "want it"); real words a stricter one.
-    out = lex.rank.has(lower) && !lex.notReal.has(lower) ? rethinkWord(lower, n, lex) : guessWord(lower, previousWord(before), lex, n);
+    const p = previousWord(before);
+    out = lex.rank.has(lower) && !lex.notReal.has(lower) ? rethinkWord(lower, n, lex) : guessWord(lower, p, lex, n);
+    // Short slips of the commonest words, now with the words on both sides: "ti would", "ig it".
+    out ??= rethinkShort(lower, p, n, lex);
   }
   if (!out) return null;
   if (casingOf(plain) === "title") out = capitalise(out);

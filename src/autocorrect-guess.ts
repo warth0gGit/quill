@@ -48,6 +48,12 @@ export const TUNE = {
   maxSlip: 2.6,
   /** how much the word before counts */
   contextWeight: 1.4,
+  /** short words more common than this are never second-guessed */
+  shortOwn: 7000,
+  /** short slips only become words this common ("it", "do", "if") */
+  shortTarget: 300,
+  /** how strongly the words either side must point to the short word (log of pair counts) */
+  shortContext: 3,
   /** how strong a word pair must be to change a real word after it */
   afterStrength: 1000000,
   /** hitting the key next to the right one */
@@ -329,4 +335,46 @@ export function rethinkAfter(prev: string, w: string, lex: Lexicon): string | nu
     }
   }
   return bestScore >= TUNE.afterStrength ? best : null;
+}
+
+/**
+ * Two- and three-letter slips of the very commonest words, which look like
+ * real (if odd) words on their own: "ti would" -> "it would", "dop you" ->
+ * "do you", "ig it" -> "if it". The words either side decide; with no help
+ * from them, only a non-word with one obvious twin changes ("iot" -> "it").
+ * Short non-words are marked "~" in the word list.
+ */
+export function rethinkShort(w: string, prev: string | null, next: string | null, lex: Lexicon): string | null {
+  if (!lex.pairs || w.length < 2 || w.length > 3 || !/^[a-z]+$/.test(w)) return null;
+  const own = lex.rank.get(w);
+  if (own !== undefined && own < TUNE.shortOwn) return null; // an everyday word: leave it
+  const pair = (a: string, b: string) => lex.pairs!.get(a + " " + b) ?? 0;
+  if ((prev && pair(prev, w)) || (next && pair(w, next))) return null; // normal as typed
+  // [word, score, context, rank]
+  const ranked: [string, number, number, number][] = [];
+  for (const c of candidates(w, lex)) {
+    const r = lex.rank.get(c)!;
+    if (r >= TUNE.shortTarget || c + "s" === w || w + "s" === c || c.includes("'")) continue;
+    let slip = slipCost(w, c, 3);
+    // Swapping the first two letters ("ti" for "it") is a slip of order, not a wrong first letter.
+    if (w[0] === c[1] && w[1] === c[0] && w.slice(2) === c.slice(2)) slip -= 0.9;
+    if (slip > 1.0) continue;
+    const ctx = (prev ? Math.log(1 + pair(prev, c)) : 0) + (next ? Math.log(1 + pair(c, next)) : 0);
+    ranked.push([c, ctx - 1.5 * slip, ctx, r]);
+  }
+  if (ranked.length === 0) return null;
+  ranked.sort((x, y) => y[1] - x[1]);
+  const [best, s, ctx, r] = ranked[0];
+  const runnerUp = ranked.length > 1 ? ranked[1][1] : -Infinity;
+  const real = own !== undefined && !lex.notReal.has(w);
+  if (ctx >= TUNE.shortContext && s - runnerUp >= 1) {
+    // The words either side point clearly to one of them, and the next word
+    // agrees. A dictionary word ("ti", "tow") also needs the word before not
+    // to object: "the tow truck" stays.
+    if (next && pair(best, next) >= 20 && (!real || !prev || prev.includes("'") || pair(prev, best) > 0)) return best;
+    return null;
+  }
+  // No help from either side: only a non-word with one obvious, very common twin ("iot" -> "it").
+  if (!real && ctx === 0 && w.length === 3 && r < 100 && ranked.length === 1) return best;
+  return null;
 }
