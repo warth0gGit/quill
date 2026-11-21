@@ -6,9 +6,7 @@
  * Shift+Enter starts a new line. Esc (or clicking elsewhere) puts the window
  * away and keeps what you typed for next time.
  */
-import "@fontsource/spectral/400.css";
-import "@fontsource/spectral/400-italic.css";
-import "@fontsource/spectral/600.css";
+import "./fonts";
 import "./styles.css";
 import "./capture.css";
 
@@ -20,6 +18,9 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { library, newFileName, toFile, joinPath, errorText, QUICK, type FolderEntry } from "./storage";
 import { inTauri } from "./platform";
 import { Autocorrect, autocorrectNow } from "./autocorrect";
+import { startSkins, onSkinChange, caretBox, flare, keySound } from "./skins";
+
+startSkins(); // the same skin as the main window, and it follows changes made there
 
 const textEl = document.getElementById("cap-text")!;
 const foldersEl = document.getElementById("cap-folders")!;
@@ -97,7 +98,7 @@ const editor = new Editor({
 });
 editor.on("update", () => draft.set(editor.isEmpty ? "" : editor.getHTML()));
 
-/* ------------------------------------------------------------ the Glow cursor, as in the main window */
+/* ------------------------------------------------------------ the skin's cursor, as in the main window */
 
 function placeCaret() {
   const { view, state } = editor;
@@ -105,20 +106,22 @@ function placeCaret() {
     caret.classList.remove("on");
     return;
   }
-  const c = view.coordsAtPos(state.selection.head);
-  const lineH = c.bottom - c.top;
-  const h = lineH * 0.75;
-  caret.style.transform = `translate(${c.left + 1.5}px, ${c.top + (lineH - h) / 2}px)`;
-  caret.style.height = `${h}px`;
+  const b = caretBox(view.coordsAtPos(state.selection.head));
+  caret.style.transform = `translate(${b.x}px, ${b.y}px)`;
+  caret.style.height = `${b.h}px`;
+  caret.style.width = b.w ? `${b.w}px` : "";
   caret.classList.add("on");
 }
+onSkinChange(() => requestAnimationFrame(placeCaret));
 editor.on("selectionUpdate", placeCaret);
 editor.on("transaction", () => requestAnimationFrame(placeCaret));
 editor.on("focus", placeCaret);
 editor.on("blur", () => caret.classList.remove("on"));
 textEl.addEventListener("scroll", placeCaret, { passive: true });
 let typingTimer: number | undefined;
-editor.view.dom.addEventListener("keydown", () => {
+editor.view.dom.addEventListener("keydown", (e) => {
+  keySound(e);
+  flare(caret);
   document.body.classList.add("typing");
   clearTimeout(typingTimer);
   typingTimer = window.setTimeout(() => document.body.classList.remove("typing"), 600);

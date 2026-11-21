@@ -1,0 +1,426 @@
+[
+  {
+    "id": "cobalt",
+    "name": "Cobalt Ink",
+    "tagline": "The Quill you know. Calm graphite, one clear blue.",
+    "badge": "Default",
+    "default": true,
+    "font": {
+      "family": "Spectral",
+      "label": "Spectral Light",
+      "sizePx": 19,
+      "weight": 300,
+      "soft": 0
+    },
+    "rhythm": {
+      "lineHeight": 1.7,
+      "paragraph": "gap",
+      "pageWidthPx": 620
+    },
+    "cursor": {
+      "id": "glow",
+      "label": "Glow"
+    },
+    "sound": null,
+    "toolbarFinish": "Frosted glass",
+    "day": {
+      "ground": "#EEEFEC",
+      "paper": "#FBFBF9",
+      "ink": "#2B2D31",
+      "accent": "#1F4FD1",
+      "shelfInks": [
+        "#2B2D31",
+        "#16275A",
+        "#1F4FD1",
+        "#1F73B8",
+        "#D2232A"
+      ],
+      "texture": "flat"
+    },
+    "night": {
+      "ground": "#121417",
+      "paper": "#1B1E22",
+      "ink": "#E3E4E0",
+      "accent": "#7C9CFF",
+      "shelfInks": [
+        "#E3E4E0",
+        "#9DAEE6",
+        "#7C9CFF",
+        "#6CB4F0",
+        "#FF6B6B"
+      ],
+      "texture": "flat"
+    }
+  },
+  {
+    "id": "oil",
+    "name": "Midnight Oil",
+    "tagline": "Writing late by a desk lamp. Warm words on deep navy.",
+    "badge": "Night first",
+    "default": false,
+    "font": {
+      "family": "Cormorant Garamond",
+      "label": "Cormorant Garamond",
+      "sizePx": 22,
+      "weight": 400,
+      "soft": 0
+    },
+    "rhythm": {
+      "lineHeight": 1.6,
+      "paragraph": "gap",
+      "pageWidthPx": 620
+    },
+    "cursor": {
+      "id": "lamp",
+      "label": "Lamp: amber, faint flicker"
+    },
+    "sound": "nib",
+    "toolbarFinish": "Solid paper",
+    "day": {
+      "ground": "#E6E0D3",
+      "paper": "#F6F2E8",
+      "ink": "#2A2620",
+      "accent": "#B9782A",
+      "shelfInks": [
+        "#2A2620",
+        "#3B4A6B",
+        "#B9782A",
+        "#5D7397",
+        "#A8402E"
+      ],
+      "texture": "grain"
+    },
+    "night": {
+      "ground": "#0B0F1B",
+      "paper": "#151A2A",
+      "ink": "#E8DFC9",
+      "accent": "#E8A94E",
+      "shelfInks": [
+        "#E8DFC9",
+        "#C9B37E",
+        "#E8A94E",
+        "#8FA7C9",
+        "#E0705A"
+      ],
+      "texture": "grain"
+    }
+  },
+  {
+    "id": "glass",
+    "name": "Sea Glass",
+    "tagline": "Pale, cool and airy, like a window by the sea.",
+    "badge": null,
+    "default": false,
+    "font": {
+      "family": "Gowun Batang",
+      "label": "Gowun Batang",
+      "sizePx": 18,
+      "weight": 400,
+      "soft": 0
+    },
+    "rhythm": {
+      "lineHeight": 1.9,
+      "paragraph": "gap",
+      "pageWidthPx": 620
+    },
+    "cursor": {
+      "id": "tide",
+      "label": "Tide: slow drift and fade"
+    },
+    "sound": null,
+    "toolbarFinish": "Frosted glass",
+    "day": {
+      "ground": "#D8E5E2",
+      "paper": "#F3F8F7",
+      "ink": "#23343A",
+      "accent": "#2A8584",
+      "shelfInks": [
+        "#23343A",
+        "#1E5B63",
+        "#2A8584",
+        "#5E9FAE",
+        "#C0533F"
+      ],
+      "texture": "flat"
+    },
+    "night": {
+      "ground": "#0D181A",
+      "paper": "#142224",
+      "ink": "#DCEBE8",
+      "accent": "#5FC2BC",
+      "shelfInks": [
+        "#DCEBE8",
+        "#8CC7C9",
+        "#5FC2BC",
+        "#9AD0DA",
+        "#F08A76"
+      ],
+      "texture": "flat"
+    }
+  },
+  {
+    "id": "library",
+    "name": "Old Library",
+    "tagline": "Laid paper, oxblood ink, paragraphs indented like a real book.",
+    "badge": null,
+    "default": false,
+    "font": {
+      "family": "EB Garamond",
+      "label": "EB Garamond",
+      "sizePx": 20,
+      "weight": 400,
+      "soft": 0
+    },
+    "rhythm": {
+      "lineHeight": 1.6,
+      "paragraph": "indent",
+      "pageWidthPx": 620
+    },
+    "cursor": {
+      "id": "ribbon",
+      "label": "Ribbon: a bookmark tail"
+    },
+    "sound": "page",
+    "toolbarFinish": "Solid paper",
+    "day": {
+      "ground": "#DAD2C3",
+      "paper": "#F3EEE3",
+      "ink": "#2B241E",
+      "accent": "#8A2323",
+      "shelfInks": [
+        "#2B241E",
+        "#4A3A5A",
+        "#8A2323",
+        "#3D5A4A",
+        "#A0651E"
+      ],
+      "texture": "laid"
+    },
+    "night": {
+      "ground": "#15110E",
+      "paper": "#211A16",
+      "ink": "#E7DCCB",
+      "accent": "#D96B5F",
+      "shelfInks": [
+        "#E7DCCB",
+        "#B7A6C9",
+        "#D96B5F",
+        "#93B5A0",
+        "#D9A25A"
+      ],
+      "texture": "laid"
+    }
+  },
+  {
+    "id": "swim",
+    "name": "Night Swim",
+    "tagline": "Dark water and a cursor that glows like plankton.",
+    "badge": "Night first",
+    "default": false,
+    "font": {
+      "family": "Newsreader",
+      "label": "Newsreader Light",
+      "sizePx": 19,
+      "weight": 300,
+      "soft": 0
+    },
+    "rhythm": {
+      "lineHeight": 1.75,
+      "paragraph": "gap",
+      "pageWidthPx": 620
+    },
+    "cursor": {
+      "id": "biolum",
+      "label": "Bioluminescent: slow pulsing halo"
+    },
+    "sound": null,
+    "toolbarFinish": "Frosted glass",
+    "day": {
+      "ground": "#D9E2EE",
+      "paper": "#F5F8FC",
+      "ink": "#1A2A3D",
+      "accent": "#1677C9",
+      "shelfInks": [
+        "#1A2A3D",
+        "#203F7A",
+        "#1677C9",
+        "#13958A",
+        "#C9314A"
+      ],
+      "texture": "bloom"
+    },
+    "night": {
+      "ground": "#040A13",
+      "paper": "#0A1423",
+      "ink": "#D4E4F4",
+      "accent": "#3FC6F0",
+      "shelfInks": [
+        "#D4E4F4",
+        "#7E9AD0",
+        "#3FC6F0",
+        "#5EE0D0",
+        "#FF7A8A"
+      ],
+      "texture": "bloom"
+    }
+  },
+  {
+    "id": "snow",
+    "name": "Snowfield",
+    "tagline": "Bright white, crisp type, a narrow column and lots of air.",
+    "badge": null,
+    "default": false,
+    "font": {
+      "family": "Source Serif 4",
+      "label": "Source Serif 4 Light",
+      "sizePx": 18,
+      "weight": 300,
+      "soft": 0
+    },
+    "rhythm": {
+      "lineHeight": 1.8,
+      "paragraph": "gap",
+      "pageWidthPx": 540
+    },
+    "cursor": {
+      "id": "frost",
+      "label": "Frost: thin, sparks on each key"
+    },
+    "sound": "tick",
+    "toolbarFinish": "Hairline",
+    "day": {
+      "ground": "#E6ECF2",
+      "paper": "#FFFFFF",
+      "ink": "#1F242B",
+      "accent": "#4C7FC0",
+      "shelfInks": [
+        "#1F242B",
+        "#2B4C7E",
+        "#4C7FC0",
+        "#86A9D6",
+        "#C23B3B"
+      ],
+      "texture": "flat"
+    },
+    "night": {
+      "ground": "#11151A",
+      "paper": "#1A1F26",
+      "ink": "#EEF2F6",
+      "accent": "#8DB4F0",
+      "shelfInks": [
+        "#EEF2F6",
+        "#A9C1E6",
+        "#8DB4F0",
+        "#C2D6F2",
+        "#F27C7C"
+      ],
+      "texture": "flat"
+    }
+  },
+  {
+    "id": "clack",
+    "name": "Clack",
+    "tagline": "A typewriter at heart. Monospace, ribbon red, and the sound if you want it.",
+    "badge": null,
+    "default": false,
+    "font": {
+      "family": "DM Mono",
+      "label": "DM Mono",
+      "sizePx": 16,
+      "weight": 400,
+      "soft": 0
+    },
+    "rhythm": {
+      "lineHeight": 1.8,
+      "paragraph": "gap",
+      "pageWidthPx": 620
+    },
+    "cursor": {
+      "id": "block",
+      "label": "Typebar: solid block, hard blink"
+    },
+    "sound": "clack",
+    "toolbarFinish": "Hairline",
+    "day": {
+      "ground": "#D8D6CF",
+      "paper": "#F2F0EA",
+      "ink": "#1E1E1E",
+      "accent": "#C02626",
+      "shelfInks": [
+        "#1E1E1E",
+        "#24407A",
+        "#2457C9",
+        "#5C7FB8",
+        "#C02626"
+      ],
+      "texture": "grain"
+    },
+    "night": {
+      "ground": "#121212",
+      "paper": "#1C1C1C",
+      "ink": "#E6E3DA",
+      "accent": "#FF6A5C",
+      "shelfInks": [
+        "#E6E3DA",
+        "#9DB0DA",
+        "#7FA3FF",
+        "#A7BEDF",
+        "#FF6A5C"
+      ],
+      "texture": "grain"
+    }
+  },
+  {
+    "id": "cloud",
+    "name": "Cloud Nine",
+    "tagline": "Soft, rounded and dreamy. Lavender light and a floating cursor.",
+    "badge": null,
+    "default": false,
+    "font": {
+      "family": "Fraunces",
+      "label": "Fraunces Soft",
+      "sizePx": 19,
+      "weight": 300,
+      "soft": 100
+    },
+    "rhythm": {
+      "lineHeight": 1.8,
+      "paragraph": "gap",
+      "pageWidthPx": 620
+    },
+    "cursor": {
+      "id": "bubble",
+      "label": "Bubble: rounded, floats gently"
+    },
+    "sound": null,
+    "toolbarFinish": "Frosted glass",
+    "day": {
+      "ground": "#E9E5F2",
+      "paper": "#FBFAFE",
+      "ink": "#2D2A3E",
+      "accent": "#7262D6",
+      "shelfInks": [
+        "#2D2A3E",
+        "#4B3F86",
+        "#7262D6",
+        "#5E9BD6",
+        "#D2485E"
+      ],
+      "texture": "bloom"
+    },
+    "night": {
+      "ground": "#13111C",
+      "paper": "#1C1929",
+      "ink": "#ECE8F7",
+      "accent": "#A193FF",
+      "shelfInks": [
+        "#ECE8F7",
+        "#B9AEF0",
+        "#A193FF",
+        "#8EC1F2",
+        "#FF7F95"
+      ],
+      "texture": "bloom"
+    }
+  }
+]

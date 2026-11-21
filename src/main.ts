@@ -1,8 +1,4 @@
-import "@fontsource/spectral/300.css";
-import "@fontsource/spectral/400.css";
-import "@fontsource/spectral/400-italic.css";
-import "@fontsource/spectral/600.css";
-import "@fontsource/spectral/600-italic.css";
+import "./fonts";
 import "./styles.css";
 
 import { Editor } from "@tiptap/core";
@@ -29,9 +25,14 @@ import {
 } from "./storage";
 import { createLibrary } from "./library";
 import { runSplash } from "./splash";
+import { startSkins, onSkinChange, caretBox, flare, keySound, inkNames, fontStack, currentSkin } from "./skins";
+import { openSettings, settingsOpen } from "./settings";
 import { EditorState, NodeSelection } from "@tiptap/pm/state";
 import { bar, icons, MOD } from "./ui";
 import * as os from "./platform";
+
+// The skin first, so nothing is drawn in the wrong paper or typeface.
+startSkins();
 
 const page = document.getElementById("page")!;
 /** The mouse button is down on the page (a click, or a drag to select). */
@@ -62,6 +63,9 @@ const pref = {
 
 /* ------------------------------------------------------------------ editor */
 
+/** Windows' spelling underlines (Settings > Writing); on unless switched off. */
+let spellcheck = pref.get("spellcheck") !== "off";
+
 const editor = new Editor({
   element: document.getElementById("editor")!,
   extensions: [
@@ -76,7 +80,7 @@ const editor = new Editor({
       link: false,
       underline: false,
       strike: false,
-      dropcursor: { color: "var(--cobalt)", width: 2 },
+      dropcursor: { color: "var(--accent)", width: 2 },
     }),
     // Faded strike-through: struck words stay readable but step back.
     Strike.extend({
@@ -95,7 +99,7 @@ const editor = new Editor({
   enablePasteRules: false,
   autofocus: "end",
   editorProps: {
-    attributes: { class: "ed", spellcheck: "true", "aria-label": "Page" },
+    attributes: () => ({ class: "ed", spellcheck: String(spellcheck), "aria-label": "Page" }),
     // Typewriter scrolling: whenever typing or the keyboard moves the cursor,
     // the page scrolls so the line you're on sits about a fifth of the way
     // down the window. Clicking somewhere never scrolls. While you're
@@ -103,7 +107,7 @@ const editor = new Editor({
     // as much as it must to keep the end of the selection in view.
     handleScrollToSelection: (view) => {
       if (selecting) return true; // the mouse is down: the browser scrolls at the edges itself
-      if (!view.state.selection.empty) return false;
+      if (!view.state.selection.empty || !typewriter) return false;
       keepLineInPlace(view.coordsAtPos(view.state.selection.head));
       return true;
     },
@@ -113,6 +117,8 @@ const editor = new Editor({
 /* ------------------------------------------------------------ typewriter scrolling */
 
 const WRITING_LINE = 0.2; // the line you're writing sits this far down the window
+/** Typewriter scrolling (Settings > Writing); on unless switched off. */
+let typewriter = pref.get("typewriter") !== "off";
 
 function keepLineInPlace(c: { top: number; bottom: number }) {
   const box = page.getBoundingClientRect();
@@ -122,12 +128,11 @@ function keepLineInPlace(c: { top: number; bottom: number }) {
 }
 
 /* ------------------------------------------------------------ glow cursor */
-// Cobalt, 2.5px wide, 75% of the line, a 5px glow at 30%, breathing every
-// 2.8s, hopping to each new position in 170ms. It sits 1.5px clear of the
-// letter before it, so it never touches the text.
+// In Cobalt Ink: 2.5px wide, 75% of the line, a 5px glow at 30%, breathing
+// every 2.8s, hopping to each new position in 170ms. It sits 1.5px clear of
+// the letter before it, so it never touches the text. Other skins restyle it
+// (styles.css, body[data-cursor]) and Clack makes it a block (skins.ts).
 
-const CARET_GAP = 1.5;
-const CARET_HEIGHT = 0.75;
 let typingTimer: number | undefined;
 
 function placeCaret() {
@@ -136,11 +141,11 @@ function placeCaret() {
     caret.classList.remove("on");
     return;
   }
-  const c = view.coordsAtPos(state.selection.head);
-  const lineH = c.bottom - c.top;
-  const h = lineH * CARET_HEIGHT;
-  caret.style.transform = `translate(${c.left + CARET_GAP}px, ${c.top + (lineH - h) / 2}px)`;
-  caret.style.height = `${h}px`;
+  // The skin decides the cursor's shape: a thin line, or Clack's block.
+  const b = caretBox(view.coordsAtPos(state.selection.head));
+  caret.style.transform = `translate(${b.x}px, ${b.y}px)`;
+  caret.style.height = `${b.h}px`;
+  caret.style.width = b.w ? `${b.w}px` : "";
   caret.classList.add("on");
 }
 
@@ -164,6 +169,8 @@ editor.on("blur", () => caret.classList.remove("on"));
 
 editor.view.dom.addEventListener("keydown", (e) => {
   if (e.key === "Alt") return; // Alt alone toggles the top shelf (below)
+  keySound(e); // only if the skin has one and it's switched on
+  flare(caret);
   document.body.classList.add("typing");
   clearTimeout(typingTimer);
   typingTimer = window.setTimeout(() => document.body.classList.remove("typing"), 600);
@@ -209,13 +216,9 @@ os.onResized(() => {
 
 /* ------------------------------------------------------------ Float */
 
-const INK_LABEL: Record<InkRole, string> = {
-  graphite: "Graphite",
-  midnight: "Midnight",
-  cobalt: "Cobalt",
-  azure: "Azure",
-  signal: "Signal red",
-};
+// The five inks are named by the skin: Cobalt Ink keeps Graphite, Midnight,
+// Cobalt, Azure and Signal red; the other skins name them by role.
+const inkLabel = (role: InkRole) => inkNames(currentSkin())[INK_ROLES.indexOf(role)];
 
 const F = bar("float", "Format selection");
 const float = F.el;
@@ -244,7 +247,7 @@ const floatSizes = SIZES.map(([name, role]) =>
 );
 F.sep();
 const floatInks = INK_ROLES.map((role) =>
-  F.button(inkGlyph(role), INK_LABEL[role], () => {
+  F.button(inkGlyph(role), inkLabel(role), () => {
     editor.chain().focus().setInk(role).run();
     updateFloat();
   }),
@@ -319,7 +322,7 @@ const shelfItalic = S.button("<i>I</i>", `Italic for what you type next (${MOD}+
 );
 S.sep();
 const shelfInks = INK_ROLES.map((role) =>
-  S.button(inkGlyph(role), `${INK_LABEL[role]} for what you type next`, () => changeTyping({ ink: role === "graphite" ? null : role })),
+  S.button(inkGlyph(role), `${inkLabel(role)} for what you type next`, () => changeTyping({ ink: role === "graphite" ? null : role })),
 );
 S.sep();
 S.tag("Lists");
@@ -432,6 +435,7 @@ if (os.inTauri) {
 menuItem("Print…", `${MOD} P`, () => openPrint());
 menu.appendChild(document.createElement("hr"));
 menuItem("Show in File Explorer", "", () => void os.showInExplorer(savedPath ?? libraryRoot));
+menuItem("Settings…", `${MOD} ,`, () => showSettings());
 menu.appendChild(Object.assign(document.createElement("div"), { className: "ver", textContent: `Quill ${__APP_VERSION__}` }));
 
 function toggleMenu() {
@@ -593,7 +597,7 @@ document.getElementById("print-go")!.addEventListener("click", () => {
   document.body.classList.toggle("print-black", printColours === "black");
   printStyle.textContent =
     printNumbers === "on"
-      ? `@page { @bottom-center { content: counter(page); font-family: Spectral, Georgia, serif; font-size: 10pt; color: #666; } }`
+      ? `@page { @bottom-center { content: counter(page); font-family: ${fontStack(currentSkin())}; font-size: 10pt; color: #666; } }`
       : "";
   // Let the sheet disappear before the system dialog takes over.
   setTimeout(() => {
@@ -767,6 +771,7 @@ function scheduleTreeRefresh() {
 /* --------------------------------------------------------------- keys */
 
 addEventListener("keydown", (e) => {
+  if (settingsOpen()) return; // Settings handles its own keys
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (e.key === "F11") {
@@ -784,6 +789,9 @@ addEventListener("keydown", (e) => {
   } else if (mod && k === "l") {
     e.preventDefault();
     lib.toggle();
+  } else if (mod && e.key === ",") {
+    e.preventDefault();
+    showSettings();
   } else if (e.key === "Escape" && !menu.hidden) {
     menu.hidden = true;
   } else if (e.key === "Escape" && lib.isOpen() && !lib.editing) {
@@ -803,6 +811,58 @@ page.addEventListener("mousedown", (e) => {
     editor.commands.focus("end");
   }
 });
+
+/* --------------------------------------------------------------- skins and settings */
+
+// A new skin can change the typeface, size and rhythm: lay the sheets out
+// again, and rename the five inks.
+onSkinChange((s) => {
+  const names = inkNames(s);
+  const label = (b: HTMLButtonElement, t: string) => {
+    b.title = t;
+    b.setAttribute("aria-label", t);
+  };
+  floatInks.forEach((b, i) => label(b, names[i]));
+  shelfInks.forEach((b, i) => label(b, `${names[i]} for what you type next`));
+  pictures.relayout();
+  afterLayoutChange();
+});
+
+function showSettings() {
+  menu.hidden = true;
+  hideShelves();
+  float.classList.remove("on");
+  openSettings({
+    autocorrect: {
+      get: autocorrectOn,
+      set: (on) => {
+        setAutocorrect(on);
+        acBtn.setAttribute("aria-pressed", String(on)); // the top shelf button shows the same switch
+      },
+      words: autocorrectWords,
+    },
+    pages: { get: () => pages.enabled, set: setPages },
+    typewriter: {
+      get: () => typewriter,
+      set: (on) => {
+        typewriter = on;
+        pref.set("typewriter", on ? "on" : "off");
+      },
+    },
+    spellcheck: {
+      get: () => spellcheck,
+      set: (on) => {
+        spellcheck = on;
+        pref.set("spellcheck", on ? "on" : "off");
+        editor.view.dispatch(editor.state.tr.setMeta("addToHistory", false)); // re-reads the attributes
+      },
+    },
+    libraryPath: () => libraryRoot,
+    showLibrary: () => void os.showInExplorer(libraryRoot),
+    captureKeys: os.inTauri ? async () => (await os.captureShortcut()).keys : null,
+    closed: () => editor.commands.focus(),
+  });
+}
 
 /* --------------------------------------------------------------- start */
 
