@@ -55,6 +55,8 @@ pub enum Event {
     Stopped { error: Option<String> },
     /// The microphone gave nothing but silence for a while.
     Silent,
+    /// The default microphone was silent, so another one is listening instead.
+    OtherMic,
     Download { done: u64, total: u64 },
     Downloaded,
     DownloadFailed { error: String },
@@ -208,16 +210,17 @@ pub fn stop(app: &tauri::AppHandle) {
 
 /* ------------------------------------------------------------------ listening */
 
-fn listen(app: &tauri::AppHandle, window: &str, stop: &AtomicBool, phrases: &Sender<Vec<f32>>) -> Result<(), String> {
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+type Mic = (cpal::Stream, Receiver<Vec<f32>>, f64);
 
-    let no_mic = "Quill can't find a microphone. Plug one in, or check Windows sound settings.";
-    let host = cpal::default_host();
-    let device = host.default_input_device().ok_or(no_mic)?;
-    let config = device.default_input_config().map_err(|_| no_mic.to_string())?;
+/// Opens one microphone: its sound arrives as mono chunks on the receiver.
+fn open_mic(device: &cpal::Device) -> Result<Mic, String> {
+    use cpal::traits::{DeviceTrait, StreamTrait};
+
+    let config = device
+        .default_input_config()
+        .map_err(|_| "Quill can't find a microphone. Plug one in, or check Windows sound settings.".to_string())?;
     let channels = config.channels() as usize;
     let in_rate = config.sample_rate() as f64;
-
     let (tx, rx) = mpsc::channel::<Vec<f32>>();
     let err = |_| {};
     let stream = match config.sample_format() {
@@ -259,6 +262,38 @@ fn listen(app: &tauri::AppHandle, window: &str, stop: &AtomicBool, phrases: &Sen
     stream
         .play()
         .map_err(|_| "Quill couldn't start the microphone. Check Windows Settings > Privacy > Microphone.".to_string())?;
+    Ok((stream, rx, in_rate))
+}
+
+/// The default microphone gave pure silence: tries each of the others for a
+/// moment and returns the first that actually hears something.
+fn find_live_mic(stop: &AtomicBool) -> Option<Mic> {
+    use cpal::traits::HostTrait;
+    let devices = cpal::default_host().input_devices().ok()?;
+    for device in devices {
+        if stop.load(Ordering::SeqCst) {
+            return None;
+        }
+        let Ok(mic) = open_mic(&device) else { continue };
+        let until = Instant::now() + Duration::from_millis(1200);
+        while Instant::now() < until {
+            match mic.1.recv_timeout(Duration::from_millis(100)) {
+                Ok(c) if c.iter().any(|s| *s != 0.0) => return Some(mic),
+                Err(RecvTimeoutError::Disconnected) => break,
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+fn listen(app: &tauri::AppHandle, window: &str, stop: &AtomicBool, phrases: &Sender<Vec<f32>>) -> Result<(), String> {
+    use cpal::traits::HostTrait;
+
+    let device = cpal::default_host()
+        .default_input_device()
+        .ok_or("Quill can't find a microphone. Plug one in, or check Windows sound settings.")?;
+    let (mut stream, mut rx, mut in_rate) = open_mic(&device)?;
     send(app, window, Event::Listening);
 
     let mut resample = Resampler::new(in_rate, RATE as f64);
@@ -277,9 +312,22 @@ fn listen(app: &tauri::AppHandle, window: &str, stop: &AtomicBool, phrases: &Sen
         if !heard_anything && chunk.iter().any(|s| *s != 0.0) {
             heard_anything = true;
         }
-        if !heard_anything && !warned_silent && started.elapsed() > Duration::from_secs(4) {
-            warned_silent = true; // Windows hands out pure silence when microphone access is off
-            send(app, window, Event::Silent);
+        if !heard_anything && !warned_silent && started.elapsed() > Duration::from_millis(2500) {
+            warned_silent = true;
+            // The chosen microphone may be one that isn't plugged in or is
+            // switched off: look for one that hears something.
+            if let Some(mic) = find_live_mic(stop) {
+                drop(std::mem::replace(&mut stream, mic.0));
+                rx = mic.1;
+                in_rate = mic.2;
+                resample = Resampler::new(in_rate, RATE as f64);
+                heard_anything = true;
+                send(app, window, Event::OtherMic);
+            } else {
+                // Windows hands out pure silence when microphone access is off.
+                send(app, window, Event::Silent);
+            }
+            continue;
         }
         for s in resample.push(&chunk) {
             level_buf.push(s);

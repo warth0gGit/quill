@@ -20,6 +20,7 @@ import { closeHistory } from "@tiptap/pm/history";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { inTauri } from "./platform";
 
 export const DICTATE_KEYS = "Ctrl+Shift+D";
@@ -93,7 +94,7 @@ export function parseSpeech(heard: string): Piece[] {
 /* ------------------------------------------------------------ the controller */
 
 type Event =
-  | { kind: "preparing" | "listening" | "hearing" | "silent" | "downloaded" }
+  | { kind: "preparing" | "listening" | "hearing" | "silent" | "otherMic" | "downloaded" }
   | { kind: "level"; level: number }
   | { kind: "text"; text: string }
   | { kind: "stopped"; error: string | null }
@@ -214,6 +215,29 @@ export function setupDictation(host: DictationHost) {
     (offer.querySelector(".go") as HTMLButtonElement).focus();
   }
 
+  /** Every microphone gave pure silence: almost always Windows' privacy switch. */
+  function offerMicSettings() {
+    closeOffer();
+    offer = document.createElement("div");
+    offer.className = "dict-offer";
+    offer.setAttribute("role", "dialog");
+    offer.setAttribute("aria-label", "Microphone is silent");
+    offer.innerHTML =
+      "<p><b>Quill hears only silence.</b> Windows may be keeping desktop apps away from the microphone. In the settings, turn on <b>Microphone access</b> and <b>Let desktop apps access your microphone</b>, then press dictate again.</p>" +
+      '<div class="row"><button type="button" class="later">Close</button><button type="button" class="go">Open microphone settings</button></div>';
+    for (const b of offer.querySelectorAll("button")) b.addEventListener("mousedown", (e) => e.preventDefault());
+    offer.querySelector(".later")!.addEventListener("click", () => {
+      closeOffer();
+      editor.commands.focus();
+    });
+    offer.querySelector(".go")!.addEventListener("click", () => {
+      closeOffer();
+      void stop();
+      void openUrl("ms-settings:privacy-microphone").catch(() => note("Open Settings > Privacy & security > Microphone", 6000));
+    });
+    document.body.appendChild(offer);
+  }
+
   /* ---------- start and stop */
 
   async function start() {
@@ -268,7 +292,10 @@ export function setupDictation(host: DictationHost) {
           heard(ev.text);
           break;
         case "silent":
-          note("Quill hears only silence. Check the microphone, and Windows Settings > Privacy > Microphone.", 8000);
+          offerMicSettings();
+          break;
+        case "otherMic":
+          note("Your default microphone was silent, so Quill is listening with another one.", 5000);
           break;
         case "stopped":
           on = false;
