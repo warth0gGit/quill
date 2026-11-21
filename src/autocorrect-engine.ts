@@ -13,7 +13,7 @@
  * Then the first word of a sentence gets its capital letter.
  */
 import { FIXES, ABBREVIATIONS } from "./autocorrect-list";
-import { guessWord, buildIndex, type Lexicon } from "./autocorrect-guess";
+import { guessWord, rethinkWord, buildIndex, type Lexicon } from "./autocorrect-guess";
 
 /** Common words in order, most used first (filled in once the list loads). */
 let rank: Map<string, number> | null = null;
@@ -146,6 +146,45 @@ export function correct(before: string, word: string, ender: string): Correction
   if (sentence && /^\p{Ll}/u.test(out)) out = capitalise(out);
   if (out === word) return null;
   return { text: out, capitalOnly: out.toLowerCase() === word.toLowerCase() };
+}
+
+/* ------------------------------------------------------------ the word before, again */
+
+/** After "its", these mean "it's": "its been", "its a", "its much better". */
+const ITS_NEXT = new Set(
+  "a an the not been being going gonna just so very really all too also still more much only like about ok okay fine good great bad nice hard easy true possible important clear funny weird worth getting almost always never quite pretty probably actually definitely no what when how that because raining late early over done up out here there time obvious hot cold cool amazing awesome better worse best worst gone got fun nothing something everything that's also".split(" "),
+);
+/** After "lets", these mean "let's": "lets go", "lets test". */
+const LETS_NEXT = new Set(
+  "go see do get make try test talk just not be hope say start have find take play keep look move call eat think put use check give meet stop face pray begin all both talk work write read watch build plan grab head wait leave stay sit focus imagine assume pretend agree hear".split(" "),
+);
+
+/**
+ * The word before the one just finished, looked at again now that we know
+ * what follows it. Returns its replacement, or null to leave it.
+ * @param before  the paragraph's text before that earlier word
+ * @param word    the earlier word as typed
+ * @param next    the word just finished
+ */
+export function correctPrevious(before: string, word: string, next: string): string | null {
+  const ch = before.slice(-1);
+  if (ch && !OPENERS.test(ch)) return null;
+  const plain = word.replace(/’/g, "'");
+  const lower = plain.toLowerCase();
+  const n = next.replace(/’/g, "'").toLowerCase();
+  if (leaveAlone.has(lower) || casingOf(plain) === "mixed" || casingOf(plain) === "upper") return null;
+  let out: string | null = null;
+  if (lower === "its" && ITS_NEXT.has(n)) out = "it's";
+  else if (lower === "lets" && LETS_NEXT.has(n)) out = "let's";
+  else if (lex && casingOf(plain) === "lower" && /^[a-z]+$/.test(lower)) {
+    // Unknown words that weren't sure enough alone get a second look with the
+    // word after them too ("wnht it" -> "want it"); real words a stricter one.
+    out = lex.rank.has(lower) && !lex.notReal.has(lower) ? rethinkWord(lower, n, lex) : guessWord(lower, previousWord(before), lex, n);
+  }
+  if (!out) return null;
+  if (casingOf(plain) === "title") out = capitalise(out);
+  if (word.includes("’")) out = out.replace(/'/g, "’");
+  return out === word ? null : out;
 }
 
 /** The word just before (lower case), if only a space separates them. */

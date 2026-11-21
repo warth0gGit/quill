@@ -47,7 +47,7 @@ export const TUNE = {
   /** give up on guesses whose slips add up to more than this */
   maxSlip: 2.6,
   /** how much the word before counts */
-  contextWeight: 0.6,
+  contextWeight: 1.4,
 };
 
 let buf = new Float64Array(256);
@@ -161,11 +161,13 @@ function candidates(w: string, lex: Lexicon): Set<string> {
       if (b) add(a + ch + b.slice(1));
     }
   }
-  if (w.length >= 5) {
+  if (w.length >= 4) {
+    const short = w.length === 4; // short words: two slips only towards very common words
     const bag = letterBag(w);
     for (let len = w.length - 2; len <= w.length + 2; len++)
       for (const c of lex.byFirst.get(w[0] + len) ?? []) {
         if (out.has(c) || bagDistance(bag, c) > 3) continue;
+        if (short && lex.rank.get(c)! >= 1500) continue;
         if (slipCost(w, c, TUNE.maxSlip) <= TUNE.maxSlip) out.add(c);
       }
   }
@@ -192,6 +194,13 @@ function bagDistance(bag: Int8Array, c: string): number {
   return Math.max(extra, left);
 }
 
+/** Bonus for a candidate that the next word often follows. */
+function afterBonus(c: string, next: string | null, lex: Lexicon): number {
+  if (!next || !lex.pairs) return 0;
+  const k = lex.pairs.get(c + " " + next);
+  return k ? Math.min(3, Math.log(1 + k)) : 0;
+}
+
 /** Bonus for a candidate that often follows the previous word. */
 function contextBonus(prev: string | null, c: string, lex: Lexicon): number {
   if (!prev || !lex.pairs) return 0;
@@ -203,7 +212,7 @@ function contextBonus(prev: string | null, c: string, lex: Lexicon): number {
  * The word `w` (lower case, letters only) probably meant, or null.
  * `prev` is the word before it, lower case, if any.
  */
-export function guessWord(w: string, prev: string | null, lex: Lexicon): string | null {
+export function guessWord(w: string, prev: string | null, lex: Lexicon, next: string | null = null): string | null {
   if (w.length < 3) return null;
   const own = lex.rank.get(w);
   if (own !== undefined && own < RARE) return null; // a real word: leave it
@@ -213,8 +222,10 @@ export function guessWord(w: string, prev: string | null, lex: Lexicon): string 
     if (c + "s" === w || w + "s" === c) continue;
     const slip = slipCost(w, c, TUNE.maxSlip);
     if (slip > TUNE.maxSlip) continue;
-    if (w.length <= 4 && slip > 1.3) continue; // short words: one easy slip only
-    const score = TUNE.slipWeight * slip + commonness(lex.rank.get(c)!) - TUNE.contextWeight * contextBonus(prev, c, lex);
+    // Short words: one easy slip, or two towards a very common word ("wnht" -> "want").
+    if (w.length <= 4 && slip > 1.3 && !(slip <= 2.2 && lex.rank.get(c)! < 1500)) continue;
+    const score =
+      TUNE.slipWeight * slip + commonness(lex.rank.get(c)!) - TUNE.contextWeight * (contextBonus(prev, c, lex) + afterBonus(c, next, lex));
     scored.push([c, score]);
   }
   if (scored.length === 0) return null;
@@ -228,4 +239,33 @@ export function guessWord(w: string, prev: string | null, lex: Lexicon): string 
     if (s + bias > keep) return null;
   }
   return best;
+}
+
+/**
+ * Now that the next word is known, should the word before change?
+ * For real words typed by mistake that only the next word gives away:
+ * "gong to" -> "going to", "form the" stays (both are fine there).
+ * `w` and `next` are lower case.
+ */
+export function rethinkWord(w: string, next: string, lex: Lexicon): string | null {
+  if (!lex.pairs || w.length < 3 || !/^[a-z]+$/.test(w)) return null;
+  const own = lex.rank.get(w);
+  if (own === undefined || own < 3000) return null; // common words are never second-guessed
+  if (lex.pairs.get(w + " " + next)) return null; // the pair is normal as typed
+  let best: string | null = null;
+  let bestPair = 0;
+  for (const c of candidates(w, lex)) {
+    const r = lex.rank.get(c)!;
+    if (r > 3000 || c + "s" === w || w + "s" === c) continue;
+    if (slipCost(w, c, 1.2) > 1.1) continue;
+    // How strongly the next word goes with this word in particular ("going to"),
+    // not just how common the pair is ("length and").
+    const k = (lex.pairs.get(c + " " + next) ?? 0) * r;
+    if (k > bestPair) {
+      best = c;
+      bestPair = k;
+    }
+  }
+  // Only when the pair is a strong one ("going to", "would have").
+  return bestPair >= 60000 ? best : null;
 }

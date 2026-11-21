@@ -18,7 +18,7 @@
 import { Extension, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import { correct, loadWords, loadPairs, setLeaveAlone, wordAtEnd, wordsLoaded, wordCount } from "./autocorrect-engine";
+import { correct, correctPrevious, loadWords, loadPairs, setLeaveAlone, wordAtEnd, wordsLoaded, wordCount } from "./autocorrect-engine";
 // The word list ships inside the app (no download, no separate file to find).
 import WORDS from "./autocorrect-words.txt?raw";
 import PAIRS from "./autocorrect-pairs.txt?raw";
@@ -117,29 +117,44 @@ function fixBefore(view: EditorView, pos: number, ender: string): boolean {
   const found = wordAtEnd(text);
   if (!found) return false;
   loadDictionary(); // normally done already; if not, now
-  const fix = correct(text.slice(0, found.start), found.word, ender);
-  if (!fix) return false;
+  const before = text.slice(0, found.start);
+  const fix = correct(before, found.word, ender);
+  // The word before may only now give itself away: "its been", "gong to".
+  const prevM = /([\p{L}'’]+)( +)$/u.exec(before);
+  const prevFix = prevM ? correctPrevious(before.slice(0, prevM.index), prevM[1], fix?.text ?? found.word) : null;
+  if (!fix && !prevFix) return false;
 
   const from = $pos.start() + found.start;
   const to = pos;
-  // Keep the word's own look (bold, colour, size) and type the ender in the
+  // Keep each word's own look (bold, colour, size) and type the ender in the
   // style the next words are set to, exactly as a normal keystroke would.
-  const wordMarks = state.doc.nodeAt(from)?.marks ?? [];
   const nextMarks = state.storedMarks ?? $pos.marks();
-  const tr = state.tr.replaceWith(from, to, state.schema.text(fix.text, wordMarks));
-  let end = from + fix.text.length;
+  const tr = state.tr;
+  const word = fix?.text ?? found.word;
+  if (fix) tr.replaceWith(from, to, state.schema.text(fix.text, state.doc.nodeAt(from)?.marks ?? []));
+  let end = from + word.length;
   if (ender) {
     tr.insert(end, state.schema.text(ender, nextMarks));
     end += ender.length;
   }
+  let shift = 0;
+  if (prevFix && prevM) {
+    // Earlier in the line, so the positions above aren't affected until we add the shift.
+    const pFrom = $pos.start() + prevM.index;
+    const pTo = pFrom + prevM[1].length;
+    tr.replaceWith(pFrom, pTo, state.schema.text(prevFix, state.doc.nodeAt(pFrom)?.marks ?? []));
+    shift = prevFix.length - prevM[1].length;
+  }
+  end += shift;
   tr.setSelection(TextSelection.create(tr.doc, end));
-  tr.setMeta(key, {
-    from,
-    typed: found.word,
-    fixed: fix.text,
-    ender,
-    capitalOnly: fix.capitalOnly,
-  } satisfies Last);
+  const pStart = prevM ? $pos.start() + prevM.index : 0;
+  tr.setMeta(
+    key,
+    fix
+      ? ({ from: from + shift, typed: found.word, fixed: fix.text, ender, capitalOnly: fix.capitalOnly } satisfies Last)
+      : // Only the earlier word changed: show its cue (Ctrl+Z works through the usual undo).
+        ({ from: pStart, typed: prevM![1], fixed: prevFix!, ender: "\u0000", capitalOnly: false } satisfies Last),
+  );
   view.dispatch(tr.scrollIntoView());
   return true;
 }
