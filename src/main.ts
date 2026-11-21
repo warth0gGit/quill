@@ -187,6 +187,7 @@ function setPages(on: boolean) {
   document.body.classList.toggle("pages", on);
   pref.set("pageView", on ? "on" : "off");
   pagesBtn.setAttribute("aria-pressed", String(on));
+  pictures.relayout(); // before the sheets are counted: pinned pictures move with the sheets
   pages.setEnabled(on);
   placeCaret();
 }
@@ -739,6 +740,7 @@ new MutationObserver(() => libBtn.setAttribute("aria-pressed", String(lib.isOpen
 const pictures = setupPictures(editor, page, {
   docPath: () => docPath,
   flash,
+  pages: () => pages.enabled,
   layout: () => {
     if (pages.enabled) pages.schedule(60);
     requestAnimationFrame(placeCaret);
