@@ -13,7 +13,7 @@
  * Then the first word of a sentence gets its capital letter.
  */
 import { FIXES, ABBREVIATIONS } from "./autocorrect-list";
-import { guessWord, rethinkWord, buildIndex, type Lexicon } from "./autocorrect-guess";
+import { guessWord, rethinkWord, rethinkAfter, buildIndex, type Lexicon } from "./autocorrect-guess";
 
 /** Common words in order, most used first (filled in once the list loads). */
 let rank: Map<string, number> | null = null;
@@ -140,7 +140,8 @@ export function correct(before: string, word: string, ender: string): Correction
       out = fix.startsWith("I") ? fix : applyCasing(fix, casing);
     } else if (casing === "lower" && lex && /^[a-z]+$/.test(lower)) {
       // A capital the writer typed themselves usually means a name: no guessing.
-      const g = guessWord(lower, previousWord(before), lex);
+      const p = previousWord(before);
+      const g = guessWord(lower, p, lex) ?? (p ? rethinkAfter(p, lower, lex) : null);
       if (g) out = applyCasing(g, casing);
     }
   }
