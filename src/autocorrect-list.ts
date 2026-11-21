@@ -133,6 +133,7 @@ wnat:want watn:want
 whcih:which wich:which
 whiel:while
 wierd:weird theif:thief theives:thieves
+ok:OK tv:TV uk:UK usa:USA pc:PC
 wokr:work wrok:work
 wriet:write wirte:write writting:writing writen:written
 wether:whether
