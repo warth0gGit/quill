@@ -47,6 +47,20 @@ below the paragraph you're in, and a dropped one where the glowing line shows.
 - With a picture clicked: **←** **→** change the layout, **↑** **↓** the size,
   **Delete** removes it, and **Enter** or **Esc** goes back to writing.
 
+## Quick capture
+
+Press **Ctrl+Alt+Space** from anywhere and a small Quill window floats over
+whatever you're doing. Type and press **Enter**, and it's saved to the Inbox.
+To file it straight away, press **Tab**, start typing a folder name, and press
+**Enter**. **Shift+Enter** starts a new line. **Esc**, or clicking somewhere else,
+puts the window away and keeps what you typed for next time.
+
+Closing Quill's window keeps it running in the tray, so the shortcut always
+works, and Quill opens on a fresh page next time. Click the tray icon to open
+Quill, or right-click it for New page, Quick capture and Quit. Quill starts
+quietly in the tray when you sign in to Windows. To stop that, untick
+**Start with Windows** in the File menu.
+
 ## Where your writing lives
 
 Everything is saved in `Documents\Quill`, in the folders you make in the library.
