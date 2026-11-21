@@ -62,6 +62,18 @@ The shortcut works whenever Quill is open, even minimised. Closing Quill's windo
 quits it, and the shortcut with it. **Quick capture** is also in the Menu. If
 another app already uses Ctrl+Alt+Q, Quill tells you when it starts.
 
+## Autocorrect
+
+Type lazily and Quill tidies up as you go. When you finish a word (a space,
+punctuation or Enter), it fixes obvious typos (teh, recieve, becuase), puts
+back dropped apostrophes (dont, im, youre), makes "i" a capital I, and gives
+each sentence a capital letter. A faint blue underline shows a fix, then fades.
+
+Didn't want that fix? Press **Ctrl+Z** straight away and the word goes back to
+how you typed it. Quill leaves that word alone from then on. Switch autocorrect
+off or on with **Autocorrect** in the top shelf. It all happens on your PC, with
+no internet needed.
+
 ## Where your writing lives
 
 Everything is saved in `Documents\Quill`, in the folders you make in the library.

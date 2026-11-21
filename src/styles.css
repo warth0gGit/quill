@@ -444,3 +444,20 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
   body.print-black .ed, body.print-black .ed [data-ink] { color: #000 !important; }
   body.print-black .ed ul > li::before, body.print-black .ed ol > li::marker { color: #000; }
 }
+
+/* ------------------------------------------------------------ autocorrect */
+/* A corrected word gets a faint cobalt underline that fades in about a second. */
+.ed .ac-fix {
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.22em;
+  text-decoration-color: transparent;
+  animation: ac-fix 1.1s ease-out;
+}
+@keyframes ac-fix {
+  from { text-decoration-color: color-mix(in srgb, var(--cursor) 60%, transparent); }
+  to { text-decoration-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ed .ac-fix { animation: none; }
+}

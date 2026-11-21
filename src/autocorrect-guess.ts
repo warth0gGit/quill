@@ -1,0 +1,380 @@
+/**
+ * Guessing the word you meant, for words that aren't on the hand-picked list.
+ *
+ * Every nearby common word is a candidate. Each one gets a score made of two
+ * parts, the way phone keyboards do it:
+ *   - how easy the slip is: swapping two keys, hitting a neighbouring key or
+ *     doubling a letter is cheap; changing a letter far away on the keyboard
+ *     is expensive; getting the first letter wrong is rarer still;
+ *   - how common the word is: "their" beats "theirs" when both are close.
+ * The word before helps break ties ("a bog" vs "a big" isn't a guess, but
+ * "the fiorst time" → "first" is surer after "the").
+ *
+ * Quill only changes the word when the best candidate is clearly ahead of the
+ * next one, and, for real but rare words, clearly more likely than what was
+ * typed.
+ *
+ * Word lists: word frequencies from wordfreq (Robyn Speer, CC BY-SA 4.0);
+ * dictionary check from the word-list package (MIT, from SCOWL); word pairs
+ * from SymSpell's bigram list (MIT).
+ */
+
+const ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+const NEAR = new Map<string, Set<string>>();
+for (let r = 0; r < ROWS.length; r++)
+  for (let c = 0; c < ROWS[r].length; c++) {
+    const n = new Set<string>();
+    for (const [dr, dc] of [[0, -1], [0, 1], [-1, 0], [-1, 1], [1, 0], [1, -1]]) {
+      const ch = ROWS[r + dr]?.[c + dc];
+      if (ch) n.add(ch);
+    }
+    NEAR.set(ROWS[r][c], n);
+  }
+const near = (a: string, b: string) => NEAR.get(a)?.has(b) ?? false;
+const VOWELS = new Set("aeiouy");
+/** Letters people swap when spelling by ear: c/s/k, f/ph... kept simple. */
+const SOUNDS = new Set(["cs", "sc", "ck", "kc", "sz", "zs", "gj", "jg", "fv", "vf", "mn", "nm", "td", "dt", "bp", "pb"]);
+
+export const TUNE = {
+  /** how much one unit of slip counts against how common a word is */
+  slipWeight: 4.5,
+  /** the best guess must beat the runner-up by this much */
+  margin: 1.25,
+  /** a rare dictionary word must be this much less likely than the guess to change */
+  keepBias: 3,
+  /** the same for rare words that aren't in the dictionary ("reciever", "appart") */
+  keepBiasNotReal: -1.5,
+  /** give up on guesses whose slips add up to more than this */
+  maxSlip: 2.6,
+  /** how much the word before counts */
+  contextWeight: 1.4,
+  /** short words more common than this are never second-guessed */
+  shortOwn: 7000,
+  /** short slips only become words this common ("it", "do", "if") */
+  shortTarget: 300,
+  /** how strongly the words either side must point to the short word (log of pair counts) */
+  shortContext: 3,
+  /** how strong a word pair must be to change a real word after it */
+  afterStrength: 1000000,
+  /** hitting the key next to the right one */
+  nearKey: 0.8,
+};
+
+let buf = new Float64Array(256);
+
+/** Cost of turning typed `t` into candidate `c`: a weighted edit distance. */
+export function slipCost(t: string, c: string, max = 4): number {
+  const n = t.length;
+  const m = c.length;
+  if (Math.abs(n - m) > 2) return max + 1;
+  // d[i * W + j]: cost of turning t[0..i) into c[0..j), in one reused buffer
+  const W = m + 1;
+  if (buf.length < (n + 1) * W) buf = new Float64Array((n + 1) * W * 2);
+  const d = buf;
+  d[0] = 0;
+  for (let i = 1; i <= n; i++) d[i * W] = d[(i - 1) * W] + extraCost(t, i - 1);
+  for (let j = 1; j <= m; j++) d[j] = d[j - 1] + missingCost(c, j - 1);
+  for (let i = 1; i <= n; i++) {
+    let rowMin = Infinity;
+    const a = t[i - 1];
+    const xc = extraCost(t, i - 1);
+    for (let j = 1; j <= m; j++) {
+      const b = c[j - 1];
+      let v = d[(i - 1) * W + j - 1] + (a === b ? 0 : subCost(a, b));
+      const x = d[(i - 1) * W + j] + xc; // typed an extra key
+      if (x < v) v = x;
+      const y = d[i * W + j - 1] + missingCost(c, j - 1); // missed a key
+      if (y < v) v = y;
+      if (i > 1 && j > 1 && a === c[j - 2] && t[i - 2] === b && a !== b) {
+        const z = d[(i - 2) * W + j - 2] + 0.8; // swapped
+        if (z < v) v = z;
+      }
+      d[i * W + j] = v;
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1;
+  }
+  let cost = d[n * W + m];
+  if (t[0] !== c[0]) cost += 0.9; // the first letter is rarely wrong
+  return cost;
+}
+
+function subCost(a: string, b: string): number {
+  if (b === "'") return 0.9; // a letter where the apostrophe goes: shouldnbt
+  if (a === "'") return 1.6;
+  if (near(a, b)) return TUNE.nearKey;
+  if (VOWELS.has(a) && VOWELS.has(b)) return 1.2; // spelling by ear: seperate, definate
+  if (SOUNDS.has(a + b)) return 1.3;
+  return 2.0;
+}
+
+/** Typed t[i] that isn't in the word. */
+function extraCost(t: string, i: number): number {
+  const ch = t[i];
+  if (t[i - 1] === ch || t[i + 1] === ch) return 0.7; // a doubled key
+  if ((t[i - 1] && near(t[i - 1], ch)) || (t[i + 1] && near(t[i + 1], ch))) return 1.0; // brushed a neighbour
+  return 1.6;
+}
+
+/** Left out c[j]. */
+function missingCost(c: string, j: number): number {
+  const ch = c[j];
+  if (ch === "'") return 0.3; // a dropped apostrophe: wasnt, theyre
+  if (c[j - 1] === ch || c[j + 1] === ch) return 0.7; // one of a double: ocassion
+  if (VOWELS.has(ch)) return 1.1; // a skipped vowel: probly
+  return 1.3;
+}
+
+/** British and American spellings of the same word are both right: never swap them. */
+export function otherSpelling(w: string, c: string): boolean {
+  const us = (x: string) =>
+    x
+      .replace(/is(e|ed|es|ing|ation|ations|er|ers)$/, "iz$1")
+      .replace(/ys(e|ed|es|ing)$/, "yz$1")
+      .replace(/our(s|ed|ing|ful|ite|ites|able)?$/, "or$1")
+      .replace(/tre(s)?$/, "ter$1")
+      .replace(/ll(ed|ing|er|ers)$/, "l$1")
+      .replace(/ogue(s)?$/, "og$1")
+      .replace(/ence(s)?$/, "ense$1");
+  return us(w) === us(c);
+}
+
+/* ------------------------------------------------------------ the word lists */
+
+export interface Lexicon {
+  rank: Map<string, number>;
+  /** rarer words people type that aren't in the dictionary (often typos) */
+  notReal: Set<string>;
+  /** common words by first letter + length ("a5"), for wider searches */
+  byFirst: Map<string, string[]>;
+  /** "prev next" -> how often, in thousands (missing = rarely or never) */
+  pairs: Map<string, number> | null;
+}
+
+/** Only guess towards words in the most common this-many. */
+export const TARGETS = 40000;
+/** Typed words rarer than this can still be slips ("realy"). */
+export const RARE = 50000;
+
+export function buildIndex(rank: Map<string, number>): Map<string, string[]> {
+  const byFirst = new Map<string, string[]>();
+  for (const [w, r] of rank) {
+    if (r >= TARGETS) continue;
+    const k = w[0] + w.length;
+    let list = byFirst.get(k);
+    if (!list) byFirst.set(k, (list = []));
+    list.push(w);
+  }
+  return byFirst;
+}
+
+const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+const commonness = (r: number) => Math.log(r + 60);
+
+/** Candidates one edit away (any letter, any place), plus two-edit ones that keep the first letter. */
+function candidates(w: string, lex: Lexicon): Set<string> {
+  const out = new Set<string>();
+  const add = (c: string) => {
+    const r = lex.rank.get(c);
+    if (r !== undefined && r < TARGETS && c !== w) out.add(c);
+  };
+  for (let i = 0; i <= w.length; i++) {
+    const a = w.slice(0, i);
+    const b = w.slice(i);
+    if (b) add(a + b.slice(1));
+    if (b.length > 1) add(a + b[1] + b[0] + b.slice(2));
+    for (const ch of LETTERS) {
+      add(a + ch + b);
+      if (b) add(a + ch + b.slice(1));
+    }
+    // The apostrophe, left out or hit as a letter: wasnt, shouldnbt.
+    for (const ch of "'") {
+      add(a + ch + b);
+      if (b) add(a + ch + b.slice(1));
+    }
+  }
+  if (w.length >= 4) {
+    const short = w.length === 4; // short words: two slips only towards very common words
+    const bag = letterBag(w);
+    for (let len = w.length - 2; len <= w.length + 2; len++)
+      for (const c of lex.byFirst.get(w[0] + len) ?? []) {
+        if (out.has(c) || bagDistance(bag, c) > 3) continue;
+        if (short && lex.rank.get(c)! >= 1500) continue;
+        if (slipCost(w, c, TUNE.maxSlip) <= TUNE.maxSlip) out.add(c);
+      }
+  }
+  return out;
+}
+
+function letterBag(w: string): Int8Array {
+  const b = new Int8Array(26);
+  for (let i = 0; i < w.length; i++) b[w.charCodeAt(i) - 97]++;
+  return b;
+}
+/** A quick lower bound: letters in one word and not the other. */
+function bagDistance(bag: Int8Array, c: string): number {
+  const b = bag.slice();
+  let extra = 0;
+  for (let i = 0; i < c.length; i++) {
+    const k = c.charCodeAt(i) - 97;
+    if (k < 0 || k > 25) {
+      extra += 0.5;
+      continue;
+    }
+    if (b[k] > 0) b[k]--;
+    else extra++;
+  }
+  let left = 0;
+  for (let i = 0; i < 26; i++) left += b[i];
+  return Math.max(extra, left);
+}
+
+/** Bonus for a candidate that the next word often follows. */
+function afterBonus(c: string, next: string | null, lex: Lexicon): number {
+  if (!next || !lex.pairs) return 0;
+  const k = lex.pairs.get(c + " " + next);
+  return k ? Math.min(3, Math.log(1 + k)) : 0;
+}
+
+/** Bonus for a candidate that often follows the previous word. */
+function contextBonus(prev: string | null, c: string, lex: Lexicon): number {
+  if (!prev || !lex.pairs) return 0;
+  const k = lex.pairs.get(prev + " " + c);
+  return k ? Math.min(3, Math.log(1 + k)) : 0;
+}
+
+/**
+ * The word `w` (lower case, letters only) probably meant, or null.
+ * `prev` is the word before it, lower case, if any.
+ */
+/** For tests: see the top candidates and their scores. */
+export let debugHook: ((w: string, top: [string, number][], own: number | undefined) => void) | null = null;
+export const setDebugHook = (f: typeof debugHook) => (debugHook = f);
+
+export function guessWord(w: string, prev: string | null, lex: Lexicon, next: string | null = null): string | null {
+  if (w.length < 3) return null;
+  const own = lex.rank.get(w);
+  if (own !== undefined && own < RARE) return null; // a real word: leave it
+  const scored: [string, number][] = [];
+  for (const c of candidates(w, lex)) {
+    // Plurals, endings and British/American spellings are the writer's choice.
+    if (c + "s" === w || w + "s" === c || otherSpelling(w, c)) continue;
+    const slip = slipCost(w, c, TUNE.maxSlip);
+    if (slip > TUNE.maxSlip) continue;
+    // Short words: one easy slip, or two towards a very common word ("wnht" -> "want").
+    if (w.length <= 4 && slip > 1.3 && !(slip <= 2.2 && lex.rank.get(c)! < 1500)) continue;
+    const score =
+      TUNE.slipWeight * slip + commonness(lex.rank.get(c)!) - TUNE.contextWeight * (contextBonus(prev, c, lex) + afterBonus(c, next, lex));
+    scored.push([c, score]);
+  }
+  if (scored.length === 0) return null;
+  scored.sort((x, y) => x[1] - y[1]);
+  if (debugHook) debugHook(w, scored.slice(0, 5), own);
+  const [best, s] = scored[0];
+  if (scored.length > 1 && scored[1][1] - s < TUNE.margin) return null;
+  if (own !== undefined) {
+    // A real but rare word stays unless the guess is far more likely.
+    const keep = commonness(own) - TUNE.contextWeight * contextBonus(prev, w, lex);
+    const bias = lex.notReal.has(w) ? TUNE.keepBiasNotReal : TUNE.keepBias;
+    if (s + bias > keep) return null;
+  }
+  return best;
+}
+
+/**
+ * Now that the next word is known, should the word before change?
+ * For real words typed by mistake that only the next word gives away:
+ * "gong to" -> "going to", "form the" stays (both are fine there).
+ * `w` and `next` are lower case.
+ */
+export function rethinkWord(w: string, next: string, lex: Lexicon): string | null {
+  if (!lex.pairs || w.length < 3 || !/^[a-z]+$/.test(w)) return null;
+  const own = lex.rank.get(w);
+  if (own === undefined || own < 3000) return null; // common words are never second-guessed
+  if (lex.pairs.get(w + " " + next)) return null; // the pair is normal as typed
+  let best: string | null = null;
+  let bestPair = 0;
+  for (const c of candidates(w, lex)) {
+    const r = lex.rank.get(c)!;
+    if (r > 3000 || c + "s" === w || w + "s" === c || otherSpelling(w, c)) continue;
+    if (slipCost(w, c, 1.2) > 1.1) continue;
+    // How strongly the next word goes with this word in particular ("going to"),
+    // not just how common the pair is ("length and").
+    const k = (lex.pairs.get(c + " " + next) ?? 0) * r;
+    if (k > bestPair) {
+      best = c;
+      bestPair = k;
+    }
+  }
+  // Only when the pair is a strong one ("going to", "would have").
+  return bestPair >= 60000 ? best : null;
+}
+
+/**
+ * A real word that the word before gives away as a slip: "good jon" -> "good job".
+ * Measured by how much more the earlier word goes with the candidate than chance
+ * would suggest, so everyday pairs ("the plan") don't count for much.
+ */
+export function rethinkAfter(prev: string, w: string, lex: Lexicon): string | null {
+  if (!lex.pairs || w.length < 3 || !/^[a-z]+$/.test(w)) return null;
+  const own = lex.rank.get(w);
+  const pr = lex.rank.get(prev);
+  if (own === undefined || own < 3000 || pr === undefined) return null;
+  if (pr < 60) return null; // "the", "of", "to" go with everything: no clue there
+  if (lex.pairs.get(prev + " " + w)) return null; // normal as typed
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const c of candidates(w, lex)) {
+    const r = lex.rank.get(c)!;
+    if (r > 3000 || c + "s" === w || w + "s" === c || otherSpelling(w, c)) continue;
+    if (slipCost(w, c, 1.2) > 1.0) continue; // one easy slip only
+    const k = (lex.pairs.get(prev + " " + c) ?? 0) * (r + 50) * (pr + 50);
+    if (k > bestScore) {
+      best = c;
+      bestScore = k;
+    }
+  }
+  return bestScore >= TUNE.afterStrength ? best : null;
+}
+
+/**
+ * Two- and three-letter slips of the very commonest words, which look like
+ * real (if odd) words on their own: "ti would" -> "it would", "dop you" ->
+ * "do you", "ig it" -> "if it". The words either side decide; with no help
+ * from them, only a non-word with one obvious twin changes ("iot" -> "it").
+ * Short non-words are marked "~" in the word list.
+ */
+export function rethinkShort(w: string, prev: string | null, next: string | null, lex: Lexicon): string | null {
+  if (!lex.pairs || w.length < 2 || w.length > 3 || !/^[a-z]+$/.test(w)) return null;
+  const own = lex.rank.get(w);
+  if (own !== undefined && own < TUNE.shortOwn) return null; // an everyday word: leave it
+  const pair = (a: string, b: string) => lex.pairs!.get(a + " " + b) ?? 0;
+  if ((prev && pair(prev, w)) || (next && pair(w, next))) return null; // normal as typed
+  // [word, score, context, rank]
+  const ranked: [string, number, number, number][] = [];
+  for (const c of candidates(w, lex)) {
+    const r = lex.rank.get(c)!;
+    if (r >= TUNE.shortTarget || c + "s" === w || w + "s" === c || c.includes("'")) continue;
+    let slip = slipCost(w, c, 3);
+    // Swapping the first two letters ("ti" for "it") is a slip of order, not a wrong first letter.
+    if (w[0] === c[1] && w[1] === c[0] && w.slice(2) === c.slice(2)) slip -= 0.9;
+    if (slip > 1.0) continue;
+    const ctx = (prev ? Math.log(1 + pair(prev, c)) : 0) + (next ? Math.log(1 + pair(c, next)) : 0);
+    ranked.push([c, ctx - 1.5 * slip, ctx, r]);
+  }
+  if (ranked.length === 0) return null;
+  ranked.sort((x, y) => y[1] - x[1]);
+  const [best, s, ctx, r] = ranked[0];
+  const runnerUp = ranked.length > 1 ? ranked[1][1] : -Infinity;
+  const real = own !== undefined && !lex.notReal.has(w);
+  if (ctx >= TUNE.shortContext && s - runnerUp >= 1) {
+    // The words either side point clearly to one of them, and the next word
+    // agrees. A dictionary word ("ti", "tow") also needs the word before not
+    // to object: "the tow truck" stays.
+    if (next && pair(best, next) >= 20 && (!real || !prev || prev.includes("'") || pair(prev, best) > 0)) return best;
+    return null;
+  }
+  // No help from either side: only a non-word with one obvious, very common twin ("iot" -> "it").
+  if (!real && ctx === 0 && w.length === 3 && r < 100 && ranked.length === 1) return best;
+  return null;
+}

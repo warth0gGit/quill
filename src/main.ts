@@ -12,6 +12,7 @@ import { Ink, TextSize, INK_ROLES, SIZE_ROLES, type InkRole, type SizeRole } fro
 import { Typing, typingStyle, setTypingStyle, styleToText, styleFromText, PLAIN, type TypingStyle } from "./typing";
 import { Pages, PageController, PAGE_H, GAP } from "./pages";
 import { Figure, setupPictures } from "./pictures";
+import { Autocorrect, autocorrectOn, setAutocorrect, autocorrectWords } from "./autocorrect";
 import {
   library,
   newFileName,
@@ -88,6 +89,7 @@ const editor = new Editor({
     Typing,
     Pages,
     Figure,
+    Autocorrect,
   ],
   enableInputRules: false,
   enablePasteRules: false,
@@ -367,6 +369,18 @@ const spacingBtns = SPACINGS.map(([name, sp]) =>
 T.sep(tRight);
 const pagesBtn = T.button(`${icons.pages}<span>Pages</span>`, "Show pages", () => setPages(!pages.enabled), tRight);
 T.button(icons.print, `Print (${MOD}+P)`, () => openPrint(), tRight);
+// Autocorrect for lazy typing: on unless switched off here.
+const AC_ICON =
+  '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 11.5 4.6 3.5l2.8 8M2.8 8.8h3.6"/><path d="M8.8 9.6l2 2.2 3.6-4.6"/></svg>';
+const acBtn = T.button(`${AC_ICON}<span>Autocorrect</span>`, "Autocorrect while you type", () => {
+  const on = !autocorrectOn();
+  setAutocorrect(on);
+  acBtn.setAttribute("aria-pressed", String(on));
+  const n = autocorrectWords();
+  // The word count doubles as a check that spelling fixes are ready.
+  flash(on ? (n ? `Autocorrect on · ${n.toLocaleString()} words` : "Autocorrect on · spelling list missing") : "Autocorrect off", 2200);
+}, tRight);
+acBtn.setAttribute("aria-pressed", String(autocorrectOn()));
 T.sep(tRight);
 const winCtl = T.group("grp wc");
 tRight.appendChild(winCtl);
