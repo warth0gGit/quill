@@ -310,6 +310,7 @@ menuItem("New page", `${MOD} N`, () => void newPage());
 menuItem("Print…", `${MOD} P`, () => openPrint());
 menu.appendChild(document.createElement("hr"));
 menuItem("Show in File Explorer", "", () => void os.showInExplorer(savedPath ?? libraryInbox));
+menu.appendChild(Object.assign(document.createElement("div"), { className: "ver", textContent: `Quill ${__APP_VERSION__}` }));
 
 function toggleMenu() {
   if (!menu.hidden) {
@@ -581,6 +582,7 @@ void (async () => {
     /* only used for Show in File Explorer */
   }
 })();
+flash(`Quill ${__APP_VERSION__}`);
 document.fonts?.ready.then(() => {
   if (pages.enabled) pages.recompute();
   placeCaret();
