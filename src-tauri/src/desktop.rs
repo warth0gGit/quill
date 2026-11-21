@@ -79,7 +79,7 @@ pub fn shortcut_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 }
 
 /// Claim Ctrl+Alt+Space. If another app already has it, Quill still starts;
-/// quick capture is then only in the tray menu.
+/// quick capture is then only in the File menu.
 pub fn register_shortcut(app: &AppHandle) -> bool {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     match app.global_shortcut().register(SHORTCUT) {

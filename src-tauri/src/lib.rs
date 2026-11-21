@@ -144,7 +144,7 @@ fn serve_image(app: &tauri::AppHandle, uri_path: &str) -> tauri::http::Response<
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // A second launch (say, from the Start menu while Quill is in the tray)
+        // A second launch (say, from the Start menu while Quill is minimised)
         // brings the running Quill to the front instead.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| desktop::show_main(app)))
         .plugin(desktop::shortcut_plugin())
