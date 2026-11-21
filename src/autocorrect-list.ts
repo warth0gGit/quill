@@ -132,7 +132,7 @@ veyr:very vrey:very
 wnat:want watn:want
 whcih:which wich:which
 whiel:while
-wierd:weird
+wierd:weird theif:thief theives:thieves
 wokr:work wrok:work
 wriet:write wirte:write writting:writing writen:written
 wether:whether
