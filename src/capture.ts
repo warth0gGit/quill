@@ -19,6 +19,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { library, newFileName, toFile, joinPath, errorText, QUICK, type FolderEntry } from "./storage";
 import { inTauri } from "./platform";
+import { Autocorrect, autocorrectNow } from "./autocorrect";
 
 const textEl = document.getElementById("cap-text")!;
 const foldersEl = document.getElementById("cap-folders")!;
@@ -68,6 +69,7 @@ const editor = new Editor({
       trailingNode: false,
     }),
     Placeholder.configure({ placeholder: "A thought, before it goes…" }),
+    Autocorrect,
   ],
   content: draft.get(),
   enableInputRules: false,
@@ -80,6 +82,7 @@ const editor = new Editor({
         return true;
       }
       if (e.key === "Enter" && !e.isComposing) {
+        autocorrectNow(editor);
         void save();
         return true;
       }
