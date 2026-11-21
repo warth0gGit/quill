@@ -47,6 +47,7 @@ below the paragraph you're in, and a dropped one where the glowing line shows.
 - With a picture clicked: **←** **→** change the layout, **↑** **↓** the size,
   **Delete** removes it, and **Enter** or **Esc** goes back to writing.
 
+## Where your writing lives
 
 Everything is saved in `Documents\Quill`, in the folders you make in the library.
 New pages go to `Documents\Quill\Inbox`. Deleted things wait in a hidden `.trash`
