@@ -55,11 +55,8 @@ To file it straight away, press **Tab**, start typing a folder name, and press
 **Enter**. **Shift+Enter** starts a new line. **Esc**, or clicking somewhere else,
 puts the window away and keeps what you typed for next time.
 
-Closing Quill's window keeps it running in the tray, so the shortcut always
-works, and Quill opens on a fresh page next time. Click the tray icon to open
-Quill, or right-click it for New page, Quick capture and Quit. Quill starts
-quietly in the tray when you sign in to Windows. To stop that, untick
-**Start with Windows** in the File menu.
+The shortcut works whenever Quill is open, even minimised. Closing Quill's window
+quits it, and the shortcut with it. **Quick capture** is also in the File menu.
 
 ## Where your writing lives
 

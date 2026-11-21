@@ -42,46 +42,19 @@ export async function toggleFullscreen(): Promise<boolean> {
   return !!document.fullscreenElement;
 }
 
-/**
- * Run `beforeClose` (to save) before the window closes, however it is closed.
- * Quill then keeps running in the tray (so quick capture still works): the
- * window hides instead, and `afterHide` gets it ready for next time.
- */
-export function onClose(beforeClose: () => Promise<void>, afterHide: () => void = () => undefined) {
-  if (!inTauri) {
-    addEventListener("beforeunload", () => void beforeClose());
-    return;
-  }
-  void win().onCloseRequested(async (e) => {
-    await beforeClose();
-    if (await invoke<boolean>("keeps_running").catch(() => false)) {
-      e.preventDefault();
-      await win().hide();
-      afterHide();
-    }
-  });
+/** Run `beforeClose` (to save) before the window closes, however it is closed. */
+export function onClose(beforeClose: () => Promise<void>) {
+  if (inTauri) void win().onCloseRequested(async () => beforeClose());
+  else addEventListener("beforeunload", () => void beforeClose());
 }
 
-/** Something from the tray or the capture window, e.g. "quill://new-page". */
+/** A message from the capture window, e.g. "library://changed". */
 export function onAppEvent(name: string, fn: () => void) {
   if (inTauri) void listen(name, fn);
 }
 
-/** Save, then quit for real (from the tray). */
-export async function quitNow() {
-  if (inTauri) await invoke("quit_now");
-}
-
 export async function openCapture() {
   if (inTauri) await invoke("open_capture");
-}
-
-export async function startsWithWindows(): Promise<boolean | null> {
-  return inTauri ? invoke<boolean>("autostart_enabled").catch(() => null) : null;
-}
-
-export async function setStartsWithWindows(on: boolean): Promise<boolean> {
-  return invoke<boolean>("set_autostart", { on });
 }
 
 export function onResized(fn: () => void) {
