@@ -1,11 +1,15 @@
 //! Quill's native side: owns the library folder on disk.
 //!
 //! The library lives in `Documents\Quill`. Every document is one readable
-//! `.html` file. New pages land in `Documents\Quill\Inbox`.
+//! `.html` file, in folders you arrange yourself. New pages land in
+//! `Documents\Quill\Inbox`. Deleted things wait in a hidden `.trash` folder
+//! for 30 days, so Undo always works.
 
+mod library;
+
+use library::Entry;
 use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tauri::Manager;
 
 fn library_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -18,48 +22,63 @@ fn library_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn ensure_library(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let root = library_root(app)?;
-    fs::create_dir_all(root.join("Inbox"))
+    fs::create_dir_all(root.join(library::INBOX))
         .map_err(|e| format!("Couldn't create the Quill library folder: {e}"))?;
     Ok(root)
 }
 
-/// File names come from the app, but are checked anyway: a plain name ending
-/// in .html, with no path separators, so nothing can be written outside the Inbox.
-fn valid_file_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 200
-        && name.ends_with(".html")
-        && !name.contains(['/', '\\', ':'])
-        && !name.starts_with('.')
-        && name != ".html"
-}
-
-/// Write to a temporary file first, then move it into place, so a crash or
-/// power cut never leaves a half-written document.
-fn write_atomically(path: &Path, contents: &str) -> std::io::Result<()> {
-    let tmp = path.with_extension("html.tmp");
-    {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(contents.as_bytes())?;
-        f.sync_all()?;
-    }
-    fs::rename(&tmp, path)
-}
+// Commands are async so disk work never holds up the window.
 
 #[tauri::command]
-fn library_path(app: tauri::AppHandle) -> Result<String, String> {
+async fn library_path(app: tauri::AppHandle) -> Result<String, String> {
     Ok(ensure_library(&app)?.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
-/// Saves into the Inbox and returns the file's full path (for "Show in File Explorer").
-fn save_document(app: tauri::AppHandle, file_name: String, contents: String) -> Result<String, String> {
-    if !valid_file_name(&file_name) {
-        return Err(format!("Refused to save an unexpected file name: {file_name}"));
-    }
-    let path = ensure_library(&app)?.join("Inbox").join(&file_name);
-    write_atomically(&path, &contents).map_err(|e| format!("Couldn't save {file_name}: {e}"))?;
-    Ok(path.to_string_lossy().into_owned())
+async fn list_library(app: tauri::AppHandle) -> Result<Entry, String> {
+    Ok(library::list(&ensure_library(&app)?))
+}
+
+/// Saves a document and returns its full path on disk.
+#[tauri::command]
+async fn save_document(app: tauri::AppHandle, path: String, contents: String) -> Result<String, String> {
+    let saved = library::save(&ensure_library(&app)?, &path, &contents)?;
+    Ok(saved.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+async fn read_document(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    library::read(&ensure_library(&app)?, &path)
+}
+
+#[tauri::command]
+async fn full_path(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    Ok(library::resolve(&ensure_library(&app)?, &path)?.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+async fn create_folder(app: tauri::AppHandle, parent: String, name: String) -> Result<String, String> {
+    library::create_folder(&ensure_library(&app)?, &parent, &name)
+}
+
+#[tauri::command]
+async fn rename_folder(app: tauri::AppHandle, path: String, name: String) -> Result<String, String> {
+    library::rename_folder(&ensure_library(&app)?, &path, &name)
+}
+
+#[tauri::command]
+async fn move_item(app: tauri::AppHandle, path: String, into: String) -> Result<String, String> {
+    library::move_item(&ensure_library(&app)?, &path, &into)
+}
+
+#[tauri::command]
+async fn trash_item(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    library::trash(&ensure_library(&app)?, &path)
+}
+
+#[tauri::command]
+async fn restore_item(app: tauri::AppHandle, id: String) -> Result<String, String> {
+    library::restore(&ensure_library(&app)?, &id)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -67,39 +86,25 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            ensure_library(app.handle()).map_err(Box::<dyn std::error::Error>::from)?;
+            let root = ensure_library(app.handle()).map_err(Box::<dyn std::error::Error>::from)?;
+            std::thread::spawn(move || {
+                library::empty_old_trash(&root);
+                library::hide_trash(&root);
+            });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![library_path, save_document])
+        .invoke_handler(tauri::generate_handler![
+            library_path,
+            list_library,
+            save_document,
+            read_document,
+            full_path,
+            create_folder,
+            rename_folder,
+            move_item,
+            trash_item,
+            restore_item
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Quill");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn accepts_generated_names() {
-        assert!(valid_file_name("2026-11-20-160412.html"));
-    }
-
-    #[test]
-    fn rejects_paths_and_other_files() {
-        for bad in ["", ".html", "../x.html", "a\\b.html", "C:x.html", "notes.txt", ".hidden.html"] {
-            assert!(!valid_file_name(bad), "{bad} should be rejected");
-        }
-    }
-
-    #[test]
-    fn atomic_write_replaces_contents() {
-        let dir = std::env::temp_dir().join(format!("quill-test-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let p = dir.join("doc.html");
-        write_atomically(&p, "one").unwrap();
-        write_atomically(&p, "two").unwrap();
-        assert_eq!(fs::read_to_string(&p).unwrap(), "two");
-        assert!(!dir.join("doc.html.tmp").exists());
-        fs::remove_dir_all(&dir).unwrap();
-    }
 }

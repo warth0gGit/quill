@@ -187,6 +187,89 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
 }
 .status.on { opacity: 1; }
 
+/* ------------------------------------------------------------ the library */
+/* The Branches tree: curved cobalt branches, rings for closed folders and
+   solid balls for open ones. It slides over the page from the left. */
+
+.library {
+  position: fixed; left: 0; top: 0; bottom: 0; z-index: 9; width: min(320px, 86vw);
+  display: flex; flex-direction: column;
+  background: var(--paper); border-right: 1px solid var(--rule); box-shadow: var(--shadow);
+  transform: translateX(calc(-100% - 24px)); transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-size: 15.5px; user-select: none;
+}
+.library.on { transform: none; }
+.lib-tree { flex: 1; overflow: auto; padding: 52px 12px 72px; --br: var(--cobalt); }
+.lib-tree ul { list-style: none; margin: 0; padding: 0; }
+
+.lib-tree .row, .lib-tree .doc {
+  display: flex; align-items: center; gap: 9px; width: 100%; min-height: 30px; padding: 4px 6px 4px 8px;
+  border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.lib-tree .row:hover, .lib-tree .doc:hover { background: var(--hover); }
+.lib-tree .row:focus-visible, .lib-tree .doc:focus-visible { outline: 2px solid var(--cursor); outline-offset: -2px; }
+.lib-tree .row.drop { background: var(--sel); box-shadow: inset 0 0 0 1.5px var(--cobalt); }
+.lib-tree .dragging { opacity: 0.4; }
+.lib-tree .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-tree .root-row { cursor: default; }
+.lib-tree .root-row .nm { font-weight: 600; }
+.lib-tree .ct { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+/* The count sits at the end of the row; on hover the actions take its place. */
+.lib-tree .act {
+  width: 24px; height: 24px; border-radius: 6px; display: none; place-items: center; flex: none; color: var(--dim);
+}
+.lib-tree .row:hover .act, .lib-tree .doc:hover .act,
+.lib-tree .row:focus-visible .act, .lib-tree .doc:focus-visible .act { display: grid; }
+.lib-tree .row:hover .ct, .lib-tree .row:focus-visible .ct { display: none; }
+.lib-tree .ct { min-width: 24px; text-align: center; }
+.lib-tree .act:hover { background: var(--rule); color: var(--ink); }
+.lib-tree .act.del:hover { color: var(--signal); }
+
+.lib-tree .doc { color: var(--dim); font-size: 14.5px; min-height: 28px; padding-top: 3px; padding-bottom: 3px; }
+.lib-tree .doc:hover { color: var(--ink); }
+.lib-tree .doc.current { color: var(--cobalt); }
+.lib-tree .doc .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--br); opacity: 0.6; flex: none; margin: 0 3px; }
+.lib-tree .doc.current .dot { opacity: 1; box-shadow: 0 0 5px 1px var(--glow); }
+
+.lib-tree .ball {
+  width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--br);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s, background-color 0.25s;
+}
+.lib-tree .folder:not(.open) > .row .ball { background: transparent; box-shadow: inset 0 0 0 1.75px var(--br); }
+.lib-tree .row.drop .ball { transform: scale(1.45); box-shadow: 0 0 0 4px var(--sel); }
+
+.lib-tree .kids { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.lib-tree .open > .kids { grid-template-rows: 1fr; }
+.lib-tree .kids > div { overflow: hidden; min-height: 0; }
+
+/* Branches: each child hangs off a curved line from its parent's ball. */
+.lib-tree .kids ul { margin-left: 12px; }
+.lib-tree .kids li { position: relative; padding-left: 16px; }
+.lib-tree .kids li::before {
+  content: ""; position: absolute; left: 0; top: 0; width: 13px; height: 16px;
+  border-left: 1.5px solid var(--br); border-bottom: 1.5px solid var(--br); border-bottom-left-radius: 10px; opacity: 0.45;
+}
+.lib-tree .kids li:not(:last-child)::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1.5px solid var(--br); opacity: 0.45; }
+
+.lib-tree .nm-input {
+  flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--paper);
+  border: 1px solid var(--cobalt); border-radius: 6px; padding: 1px 6px; outline: none; user-select: text;
+}
+
+.lib-toast {
+  position: absolute; left: 12px; right: 12px; bottom: 14px; display: flex; gap: 12px; align-items: center;
+  padding: 8px 8px 8px 14px; border-radius: 10px; background: var(--ink); color: var(--paper); font-size: 14px;
+  opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+}
+.lib-toast.on { opacity: 1; transform: none; pointer-events: auto; }
+.lib-toast span { flex: 1; min-width: 0; }
+.lib-toast button {
+  border: 0; border-radius: 7px; padding: 4px 10px; background: color-mix(in srgb, var(--paper) 16%, transparent);
+  color: inherit; font: inherit; font-weight: 600; cursor: pointer;
+}
+.lib-toast button:hover { background: color-mix(in srgb, var(--paper) 26%, transparent); }
+.lib-toast button[hidden] { display: none; }
+
 /* ------------------------------------------------------------ print sheet */
 
 .print-sheet {
@@ -231,7 +314,7 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
   html, body { height: auto; overflow: visible; background: #fff !important; color: var(--ink); }
   .page { height: auto; overflow: visible; padding: 0 !important; }
   .sheets { width: auto !important; max-width: none !important; }
-  .caret, .tb, .status, .menu, .print-sheet, .sheet-layer, .page-gap { display: none !important; }
+  .caret, .tb, .status, .menu, .print-sheet, .sheet-layer, .page-gap, .library { display: none !important; }
   .ed { padding: 0 !important; min-height: 0 !important; }
   .ed p, .ed li { orphans: 1; widows: 1; } /* break exactly where the on-screen sheets do */
   body.print-black .ed, body.print-black .ed [data-ink] { color: #000 !important; }

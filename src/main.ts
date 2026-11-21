@@ -10,7 +10,21 @@ import StarterKit from "@tiptap/starter-kit";
 import Strike from "@tiptap/extension-strike";
 import { Ink, TextSize, INK_ROLES, type InkRole, type SizeRole } from "./marks";
 import { Pages, PageController, PAGE_H, GAP } from "./pages";
-import { newFileName, saveDocument, toFile, type DocSize, type Spacing } from "./storage";
+import {
+  library,
+  newFileName,
+  toFile,
+  fromFile,
+  errorText,
+  joinPath,
+  parentOf,
+  within,
+  INBOX,
+  type DocSize,
+  type Spacing,
+} from "./storage";
+import { createLibrary } from "./library";
+import { EditorState } from "@tiptap/pm/state";
 import { bar, icons, MOD } from "./ui";
 import * as os from "./platform";
 
@@ -249,6 +263,7 @@ const T = bar("topshelf", "Window");
 const top = T.el;
 top.dataset.tauriDragRegion = "";
 const tLeft = T.group();
+const libBtn = T.button(`${icons.library}<span>Library</span>`, `Library (${MOD}+L)`, () => lib.toggle(), tLeft);
 const fileBtn = T.button(`${icons.file}<span>File</span>`, "File", () => toggleMenu(), tLeft);
 const crumb = document.createElement("div");
 crumb.className = "crumb";
@@ -307,9 +322,10 @@ const menuItem = (label: string, kbd: string, run: () => void) => {
   menu.appendChild(b);
 };
 menuItem("New page", `${MOD} N`, () => void newPage());
+menuItem("Library", `${MOD} L`, () => void lib.open(true));
 menuItem("Print…", `${MOD} P`, () => openPrint());
 menu.appendChild(document.createElement("hr"));
-menuItem("Show in File Explorer", "", () => void os.showInExplorer(savedPath ?? libraryInbox));
+menuItem("Show in File Explorer", "", () => void os.showInExplorer(savedPath ?? libraryRoot));
 menu.appendChild(Object.assign(document.createElement("div"), { className: "ver", textContent: `Quill ${__APP_VERSION__}` }));
 
 function toggleMenu() {
@@ -327,8 +343,11 @@ addEventListener("mousedown", (e) => {
 });
 
 function updateCrumb() {
-  crumb.innerHTML = "Inbox / <b></b>";
-  crumb.querySelector("b")!.textContent = titleOf();
+  const folders = parentOf(docPath).split("/").filter(Boolean);
+  crumb.replaceChildren(
+    ...folders.flatMap((f) => [document.createTextNode(`${f} / `)]),
+    Object.assign(document.createElement("b"), { textContent: titleOf() }),
+  );
 }
 
 /* ------------------------------------------------------------ shelves at the edges */
@@ -341,6 +360,7 @@ let bottomTimer: number | undefined;
 // (or bottom) edge counts as arriving there. Alt also shows the top shelf.
 const TOP_BAND = 44;
 const BOTTOM_BAND = 56;
+const LEFT_BAND = 6;
 let topByKey = false;
 
 function showTop() {
@@ -369,7 +389,13 @@ addEventListener("mousemove", (e) => {
     clearTimeout(topTimer);
     topTimer = window.setTimeout(() => top.classList.remove("on"), 400);
   }
-  if (e.clientY > innerHeight - BOTTOM_BAND && nothingSelected) {
+  // The library slides in when the mouse reaches the left edge.
+  if (e.clientX < LEFT_BAND && e.clientY > TOP_BAND && nothingSelected && e.buttons === 0) void lib.open(false);
+  // Over the open library, the bottom edge belongs to its Undo note, not the Shelf.
+  const libRight = lib.isOpen() ? lib.el.getBoundingClientRect().right : 0;
+  const overLibrary = e.clientX < libRight;
+  if (libRight && e.clientX > libRight + 40) lib.closeSoon();
+  if (e.clientY > innerHeight - BOTTOM_BAND && nothingSelected && !overLibrary) {
     showBottom();
   } else if (shelf.classList.contains("on") && !shelf.matches(":hover")) {
     clearTimeout(bottomTimer);
@@ -380,6 +406,7 @@ document.documentElement.addEventListener("mouseleave", (e) => {
   const nothingSelected = editor.state.selection.empty;
   if (e.clientY < TOP_BAND && nothingSelected) showTop();
   else if (!topByKey) topTimer = window.setTimeout(() => menu.hidden && top.classList.remove("on"), 400);
+  if (e.clientX < LEFT_BAND && e.clientY > TOP_BAND && nothingSelected && e.buttons === 0) void lib.open(false);
   if (e.clientY > innerHeight - BOTTOM_BAND && nothingSelected) showBottom();
   else bottomTimer = window.setTimeout(() => shelf.classList.remove("on"), 400);
 });
@@ -478,9 +505,11 @@ document.getElementById("print-go")!.addEventListener("click", () => {
 
 /* ---------------------------------------------------------------- autosave */
 
-let fileName = newFileName();
+// Where the open document lives in the library, e.g. "Inbox/2026-11-20-160412.html".
+// A new page has its path from the start but is only written once it has words.
+let docPath = joinPath(INBOX, newFileName());
 let savedPath: string | null = null;
-let libraryInbox = "";
+let libraryRoot = "";
 let saveTimer: number | undefined;
 let saved = true;
 
@@ -503,9 +532,12 @@ async function saveNow() {
     return;
   }
   try {
-    savedPath = await saveDocument(fileName, toFile(titleOf(), docSize, spacing, editor.getHTML()));
+    const path = docPath;
+    const full = await library.save(path, toFile(titleOf(), docSize, spacing, editor.getHTML()));
+    if (path === docPath) savedPath = full; // unless another document was opened meanwhile
     saved = true;
     flash("Saved");
+    scheduleTreeRefresh();
   } catch (err) {
     console.error(err);
     flash("Couldn't save. Your text is still here; Quill will try again as you type.");
@@ -523,17 +555,81 @@ function flash(text: string) {
 editor.on("update", scheduleSave);
 os.onClose(saveNow);
 
-/* --------------------------------------------------------------- new page */
+/* --------------------------------------------------------------- new page, open */
+
+/** Replace what's on the page without leaving the old text in Undo. */
+function loadContent(html: string) {
+  editor.commands.setContent(html, { emitUpdate: false });
+  const { state } = editor;
+  editor.view.updateState(EditorState.create({ doc: state.doc, plugins: state.plugins, schema: state.schema }));
+  saved = true;
+  if (pages.enabled) pages.recompute();
+}
 
 async function newPage() {
   await saveNow();
-  fileName = newFileName();
+  startBlank();
+  editor.commands.focus("start");
+  void lib.refresh();
+}
+
+function startBlank() {
+  clearTimeout(saveTimer);
+  docPath = joinPath(INBOX, newFileName());
   savedPath = null;
-  editor.commands.clearContent(true);
-  saved = true;
+  loadContent("");
   setDocSize("body");
   setSpacing("comfortable");
-  editor.commands.focus("start");
+}
+
+async function openDocument(path: string) {
+  if (path === docPath) {
+    lib.close();
+    editor.commands.focus();
+    return;
+  }
+  await saveNow();
+  try {
+    const { size, spacing: sp, body } = fromFile(await library.read(path));
+    docPath = path;
+    savedPath = await library.fullPath(path);
+    loadContent(body);
+    setDocSize(size);
+    setSpacing(sp);
+    page.scrollTop = 0;
+    lib.close();
+    editor.commands.focus("end");
+  } catch (e) {
+    flash(errorText(e));
+  }
+}
+
+/* --------------------------------------------------------------- the library */
+
+const lib = createLibrary({
+  current: () => docPath,
+  open: openDocument,
+  saveFirst: saveNow,
+  moved(from, to) {
+    if (!within(docPath, from)) return;
+    docPath = to + docPath.slice(from.length);
+    void library.fullPath(docPath).then((p) => savedPath !== null && (savedPath = p));
+  },
+  removed(path) {
+    // The open document went to the Trash: carry on with a fresh page.
+    if (within(docPath, path)) startBlank();
+  },
+});
+libBtn.setAttribute("aria-pressed", "false");
+new MutationObserver(() => libBtn.setAttribute("aria-pressed", String(lib.isOpen()))).observe(lib.el, {
+  attributes: true,
+  attributeFilter: ["class"],
+});
+
+let treeTimer: number | undefined;
+function scheduleTreeRefresh() {
+  clearTimeout(treeTimer);
+  treeTimer = window.setTimeout(() => void lib.refresh(), 300);
 }
 
 /* --------------------------------------------------------------- keys */
@@ -553,8 +649,14 @@ addEventListener("keydown", (e) => {
   } else if (mod && k === "p") {
     e.preventDefault();
     openPrint();
+  } else if (mod && k === "l") {
+    e.preventDefault();
+    lib.toggle();
   } else if (e.key === "Escape" && !menu.hidden) {
     menu.hidden = true;
+  } else if (e.key === "Escape" && lib.isOpen() && !lib.editing) {
+    lib.close();
+    editor.commands.focus();
   } else if (e.key === "Escape" && top.classList.contains("on")) {
     hideShelves();
   }
@@ -562,6 +664,7 @@ addEventListener("keydown", (e) => {
 
 // Clicking anywhere outside the text (margins, the desk) returns you to it.
 page.addEventListener("mousedown", (e) => {
+  if (lib.isOpen()) lib.close();
   const t = e.target as HTMLElement;
   if (t === page || t.id === "sheets" || t.classList.contains("sheet") || t.id === "sheet-layer") {
     e.preventDefault();
@@ -576,8 +679,7 @@ setSpacing("comfortable");
 setPages(pref.get("pages") === "on");
 void (async () => {
   try {
-    const { libraryPath } = await import("./storage");
-    libraryInbox = (await libraryPath()) + (navigator.userAgent.includes("Windows") ? "\\Inbox" : "/Inbox");
+    libraryRoot = await library.rootPath();
   } catch {
     /* only used for Show in File Explorer */
   }
