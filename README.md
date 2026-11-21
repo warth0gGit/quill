@@ -49,14 +49,15 @@ below the paragraph you're in, and a dropped one where the glowing line shows.
 
 ## Quick capture
 
-Press **Ctrl+Alt+Space** from anywhere and a small Quill window floats over
+Press **Ctrl+Alt+Q** from anywhere and a small Quill window floats over
 whatever you're doing. Type and press **Enter**, and it's saved to the Inbox.
 To file it straight away, press **Tab**, start typing a folder name, and press
 **Enter**. **Shift+Enter** starts a new line. **Esc**, or clicking somewhere else,
 puts the window away and keeps what you typed for next time.
 
 The shortcut works whenever Quill is open, even minimised. Closing Quill's window
-quits it, and the shortcut with it. **Quick capture** is also in the File menu.
+quits it, and the shortcut with it. **Quick capture** is also in the File menu. If
+another app already uses Ctrl+Alt+Q, Quill tells you when it starts.
 
 ## Where your writing lives
 

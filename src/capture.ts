@@ -1,5 +1,5 @@
 /**
- * Quick capture: the small window that Ctrl+Alt+Space brings up from anywhere.
+ * Quick capture: the small window that Ctrl+Alt+Q brings up from anywhere.
  *
  * Type, press Enter, and it's saved as a new document in the Inbox. To file it
  * straight away, press Tab, start typing a folder name and press Enter.

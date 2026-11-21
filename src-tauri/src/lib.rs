@@ -118,6 +118,15 @@ fn show_main(app: tauri::AppHandle) {
     desktop::show_main(&app);
 }
 
+/// Whether Quill got its quick capture shortcut, set once at start-up.
+struct ShortcutClaimed(bool);
+
+/// The quick capture shortcut as the menu shows it, and whether Quill has it.
+#[tauri::command]
+fn capture_shortcut(claimed: tauri::State<'_, ShortcutClaimed>) -> (String, bool) {
+    (desktop::SHORTCUT_LABEL.to_string(), claimed.0)
+}
+
 #[tauri::command]
 fn open_capture(app: tauri::AppHandle) {
     desktop::toggle_capture(&app);
@@ -158,7 +167,7 @@ pub fn run() {
         .setup(|app| {
             let root = ensure_library(app.handle()).map_err(Box::<dyn std::error::Error>::from)?;
             let handle = app.handle();
-            desktop::register_shortcut(handle);
+            app.manage(ShortcutClaimed(desktop::register_shortcut(handle)));
             desktop::prepare_capture(handle);
             std::thread::spawn(move || {
                 library::empty_old_trash(&root);
@@ -187,7 +196,8 @@ pub fn run() {
             copy_image,
             discard_unsaved_images,
             show_main,
-            open_capture
+            open_capture,
+            capture_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running Quill");

@@ -53,6 +53,13 @@ export function onAppEvent(name: string, fn: () => void) {
   if (inTauri) void listen(name, fn);
 }
 
+/** Quick capture's shortcut as shown in the menu, and whether Quill got it. */
+export async function captureShortcut(): Promise<{ keys: string; claimed: boolean }> {
+  if (!inTauri) return { keys: "Ctrl Alt Q", claimed: true };
+  const [keys, claimed] = await invoke<[string, boolean]>("capture_shortcut");
+  return { keys, claimed };
+}
+
 export async function openCapture() {
   if (inTauri) await invoke("open_capture");
 }

@@ -397,7 +397,13 @@ menuItem("New page", `${MOD} N`, () => void newPage());
 menuItem("Library", `${MOD} L`, () => void lib.open(true));
 menuItem("Insert picture…", "", () => pictures.choose());
 if (os.inTauri) {
-  menuItem("Quick capture", "Ctrl Alt Space", () => void os.openCapture());
+  menuItem("Quick capture", "", () => void os.openCapture());
+  const kbd = menu.lastElementChild!.querySelector("kbd")!;
+  void os.captureShortcut().then(({ keys, claimed }) => {
+    kbd.textContent = claimed ? keys : "";
+    // Another app got there first: say so once, softly, after the splash.
+    if (!claimed) setTimeout(() => flash(`Another app is using ${keys.split(" ").join("+")}. Quick capture is in the File menu.`, 6000), 2500);
+  });
 }
 menuItem("Print…", `${MOD} P`, () => openPrint());
 menu.appendChild(document.createElement("hr"));
@@ -620,11 +626,11 @@ async function saveNow() {
 }
 
 let flashTimer: number | undefined;
-function flash(text: string) {
+function flash(text: string, ms = 1400) {
   status.textContent = text;
   status.classList.add("on");
   clearTimeout(flashTimer);
-  flashTimer = window.setTimeout(() => status.classList.remove("on"), 1400);
+  flashTimer = window.setTimeout(() => status.classList.remove("on"), ms);
 }
 
 editor.on("update", scheduleSave);
