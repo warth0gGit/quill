@@ -1,8 +1,8 @@
 /* The quick capture window: a small page that floats over everything. */
-body.capture { background: var(--paper); overflow: hidden; box-shadow: inset 0 0 0 1px var(--rule); }
+body.capture { background: var(--paper) var(--paper-tex); overflow: hidden; box-shadow: inset 0 0 0 1px var(--rule); }
 .cap { height: 100vh; display: flex; flex-direction: column; }
 .cap-text { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px 12px; cursor: text; }
-.cap-text .ed { min-height: 100%; line-height: 1.6; }
+.cap-text .ed { min-height: 100%; }
 .cap-text .ed p { margin: 0 0 0.6em; }
 .cap-text .ed p.is-editor-empty:first-child::before {
   content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--dim);

@@ -74,6 +74,20 @@ how you typed it. Quill leaves that word alone from then on. Switch autocorrect
 off or on with **Autocorrect** in the top shelf. It all happens on your PC, with
 no internet needed.
 
+## Skins and Settings
+
+**Menu > Settings…** (**Ctrl+,**) opens a panel on the right with four tabs.
+**Appearance** holds the eight skins: Cobalt Ink (the default), Midnight Oil,
+Sea Glass, Old Library, Night Swim, Snowfield, Clack and Cloud Nine. Each one
+sets the typeface, paper and inks, the cursor, a faint paper texture, the
+rhythm of the page and the toolbar finish. Clicking a skin restyles the window
+straight away; **Cancel** goes back and **Keep this skin** saves it. Inside a
+skin you can choose Windows, Day or Night, switch its key sound on (always off
+to start) and turn the paper texture off. Printing uses plain white paper with
+the skin's Day inks. **Writing** has autocorrect, pages, typewriter scrolling
+and spell check; **Library** shows where your files are; **Shortcuts** lists
+every key.
+
 ## Where your writing lives
 
 Everything is saved in `Documents\Quill`, in the folders you make in the library.
