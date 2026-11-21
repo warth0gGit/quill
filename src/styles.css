@@ -114,6 +114,15 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
 .ed .fig[data-align="left"][data-size="s"], .ed .fig[data-align="right"][data-size="s"] { width: 30%; }
 .ed .fig[data-align="left"][data-size="m"], .ed .fig[data-align="right"][data-size="m"] { width: 42%; }
 .ed .fig[data-align="left"][data-size="l"], .ed .fig[data-align="right"][data-size="l"] { width: 55%; }
+/* Pinned (wrapped) pictures keep their place on the page while you write. They
+   all sit at the start of the document; a top margin takes each one down to its
+   height, and the text steps around the picture only, not the margin above it. */
+.ed { display: flow-root; }
+.ed .fig.pinned[data-align] {
+  margin-top: var(--mt, 0px); shape-outside: inset(var(--mt, 0px) 0 0 0) margin-box; transition: width 0.16s ease;
+}
+.ed .fig.pinned[data-align="left"] { clear: left; }
+.ed .fig.pinned[data-align="right"] { clear: right; }
 .ed .fig[data-align="wide"] {
   --bleed: clamp(12px, 5vw, 64px);
   width: calc(100% + 2 * var(--bleed)); margin-left: calc(-1 * var(--bleed)); margin-right: calc(-1 * var(--bleed));
@@ -403,7 +412,22 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
 
 /* ------------------------------------------------------------ printing */
 
-@page { size: letter; margin: 1in; }
+/* Every margin box is claimed (empty unless a page number goes there), so the
+   browser's own header and footer (date, title, address, "1/3") don't print. */
+@page {
+  size: letter;
+  margin: 1in;
+  @top-left-corner { content: ""; }
+  @top-left { content: ""; }
+  @top-center { content: ""; }
+  @top-right { content: ""; }
+  @top-right-corner { content: ""; }
+  @bottom-left-corner { content: ""; }
+  @bottom-left { content: ""; }
+  @bottom-center { content: ""; }
+  @bottom-right { content: ""; }
+  @bottom-right-corner { content: ""; }
+}
 @media print {
   :root { color-scheme: light; --ink: #2b2d31; --midnight: #16275a; --cobalt: #1f4fd1; --azure: #1f73b8; --signal: #d2232a; }
   html, body { height: auto; overflow: visible; background: #fff !important; color: var(--ink); }
@@ -413,6 +437,7 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
   .ed { padding: 0 !important; min-height: 0 !important; }
   .ed p, .ed li { orphans: 1; widows: 1; } /* break exactly where the on-screen sheets do */
   .ed .fig { break-inside: avoid; }
+  .ed .fig.pinned[data-align] { margin-top: var(--mtp, 0px); shape-outside: inset(var(--mtp, 0px) 0 0 0) margin-box; }
   .ed .fig .h, .ed .fig .sizetag, .pic-drop, .pic-ghost { display: none !important; }
   .ed .fig.sel .frame { box-shadow: none; }
   .ed .fig figcaption:empty { display: none; }

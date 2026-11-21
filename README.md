@@ -20,7 +20,7 @@ code-signed yet. Choose **More info**, then **Run anyway**.
 - Move the mouse to the bottom edge of the window for the Shelf. It sets the text
   size of the whole document, and the style of the next words you type.
 - Move the mouse to the top edge (or press **Alt**) for the top shelf: the Library,
-  File menu, line spacing, pages, print and the window buttons. **F11** is full screen.
+  Menu, line spacing, pages, print and the window buttons. **F11** is full screen.
 - **Ctrl+N** starts a new page. Saving is automatic.
 
 ## The library
@@ -43,14 +43,29 @@ below the paragraph you're in, and a dropped one where the glowing line shows.
 - Click a picture for the image bar: wrap left, centre, wrap right or wide; sizes
   S, M, L and Full; a caption; replace; remove.
 - Drag a picture to move it. Drop it on the left or right to wrap text around it.
+- A wrapped picture stays exactly where you put it on the page. Text you add
+  above it flows around it instead of pushing it down. Centred and wide pictures
+  sit between paragraphs and move with the text.
 - Drag a corner to resize. Sizes snap between the four widths, or past Full into Wide.
 - With a picture clicked: **←** **→** change the layout, **↑** **↓** the size,
   **Delete** removes it, and **Enter** or **Esc** goes back to writing.
 
+## Quick capture
+
+Press **Ctrl+Alt+Q** from anywhere and a small Quill window floats over
+whatever you're doing. Type and press **Enter**, and it's saved to the Quick Capture folder.
+To file it straight away, press **Tab**, start typing a folder name, and press
+**Enter**. **Shift+Enter** starts a new line. **Esc**, or clicking somewhere else,
+puts the window away and keeps what you typed for next time.
+
+The shortcut works whenever Quill is open, even minimised. Closing Quill's window
+quits it, and the shortcut with it. **Quick capture** is also in the Menu. If
+another app already uses Ctrl+Alt+Q, Quill tells you when it starts.
+
 ## Where your writing lives
 
 Everything is saved in `Documents\Quill`, in the folders you make in the library.
-New pages go to `Documents\Quill\Inbox`. Deleted things wait in a hidden `.trash`
+New pages go to `Documents\Quill\Inbox`, and quick captures to `Documents\Quill\Quick Capture`. Deleted things wait in a hidden `.trash`
 folder there for 30 days.
 Each document is one ordinary `.html` file that opens in any web browser, so your
 writing is never locked inside the app. A document's pictures are ordinary image

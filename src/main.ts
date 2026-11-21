@@ -33,6 +33,11 @@ import { bar, icons, MOD } from "./ui";
 import * as os from "./platform";
 
 const page = document.getElementById("page")!;
+/** The mouse button is down on the page (a click, or a drag to select). */
+let selecting = false;
+addEventListener("pointerdown", (e) => (selecting = e.button === 0), true);
+addEventListener("pointerup", () => (selecting = false), true);
+addEventListener("pointercancel", () => (selecting = false), true);
 const sheetLayer = document.getElementById("sheet-layer")!;
 const caret = document.getElementById("caret")!;
 const status = document.getElementById("status")!;
@@ -91,8 +96,12 @@ const editor = new Editor({
     attributes: { class: "ed", spellcheck: "true", "aria-label": "Page" },
     // Typewriter scrolling: whenever typing or the keyboard moves the cursor,
     // the page scrolls so the line you're on sits about a fifth of the way
-    // down the window. Clicking somewhere never scrolls.
+    // down the window. Clicking somewhere never scrolls. While you're
+    // selecting (dragging, or Shift with the arrows), the page only scrolls
+    // as much as it must to keep the end of the selection in view.
     handleScrollToSelection: (view) => {
+      if (selecting) return true; // the mouse is down: the browser scrolls at the edges itself
+      if (!view.state.selection.empty) return false;
       keepLineInPlace(view.coordsAtPos(view.state.selection.head));
       return true;
     },
@@ -185,6 +194,7 @@ function setPages(on: boolean) {
   document.body.classList.toggle("pages", on);
   pref.set("pageView", on ? "on" : "off");
   pagesBtn.setAttribute("aria-pressed", String(on));
+  pictures.relayout(); // before the sheets are counted: pinned pictures move with the sheets
   pages.setEnabled(on);
   placeCaret();
 }
@@ -336,7 +346,7 @@ const top = T.el;
 top.dataset.tauriDragRegion = "";
 const tLeft = T.group();
 const libBtn = T.button(`${icons.library}<span>Library</span>`, `Library (${MOD}+L)`, () => lib.toggle(), tLeft);
-const fileBtn = T.button(`${icons.file}<span>File</span>`, "File", () => toggleMenu(), tLeft);
+const fileBtn = T.button(`${icons.menu}<span>Menu</span>`, "Menu", () => toggleMenu(), tLeft);
 const crumb = document.createElement("div");
 crumb.className = "crumb";
 crumb.dataset.tauriDragRegion = "";
@@ -396,6 +406,15 @@ const menuItem = (label: string, kbd: string, run: () => void) => {
 menuItem("New page", `${MOD} N`, () => void newPage());
 menuItem("Library", `${MOD} L`, () => void lib.open(true));
 menuItem("Insert picture…", "", () => pictures.choose());
+if (os.inTauri) {
+  menuItem("Quick capture", "", () => void os.openCapture());
+  const kbd = menu.lastElementChild!.querySelector("kbd")!;
+  void os.captureShortcut().then(({ keys, claimed }) => {
+    kbd.textContent = claimed ? keys : "";
+    // Another app got there first: say so once, softly, after the splash.
+    if (!claimed) setTimeout(() => flash(`Another app is using ${keys.split(" ").join("+")}. Quick capture is in the Menu.`, 6000), 2500);
+  });
+}
 menuItem("Print…", `${MOD} P`, () => openPrint());
 menu.appendChild(document.createElement("hr"));
 menuItem("Show in File Explorer", "", () => void os.showInExplorer(savedPath ?? libraryRoot));
@@ -406,6 +425,7 @@ function toggleMenu() {
     menu.hidden = true;
     return;
   }
+
   const r = fileBtn.getBoundingClientRect();
   menu.style.left = `${r.left}px`;
   menu.style.top = `${r.bottom + 6}px`;
@@ -616,15 +636,16 @@ async function saveNow() {
 }
 
 let flashTimer: number | undefined;
-function flash(text: string) {
+function flash(text: string, ms = 1400) {
   status.textContent = text;
   status.classList.add("on");
   clearTimeout(flashTimer);
-  flashTimer = window.setTimeout(() => status.classList.remove("on"), 1400);
+  flashTimer = window.setTimeout(() => status.classList.remove("on"), ms);
 }
 
 editor.on("update", scheduleSave);
 os.onClose(saveNow);
+os.onAppEvent("library://changed", () => void lib.refresh()); // a quick capture was saved
 
 /* --------------------------------------------------------------- new page, open */
 
@@ -716,6 +737,7 @@ new MutationObserver(() => libBtn.setAttribute("aria-pressed", String(lib.isOpen
 const pictures = setupPictures(editor, page, {
   docPath: () => docPath,
   flash,
+  pages: () => pages.enabled,
   layout: () => {
     if (pages.enabled) pages.schedule(60);
     requestAnimationFrame(placeCaret);

@@ -6,6 +6,7 @@
 //! for 30 days, so Undo always works. Pictures live in a folder beside their
 //! document and are shown in the window through the `qimg:` address scheme.
 
+mod desktop;
 mod library;
 
 use library::Entry;
@@ -112,6 +113,25 @@ async fn discard_unsaved_images(app: tauri::AppHandle, doc: String) -> Result<()
     library::discard_unsaved_images(&ensure_library(&app)?, &doc)
 }
 
+#[tauri::command]
+fn show_main(app: tauri::AppHandle) {
+    desktop::show_main(&app);
+}
+
+/// Whether Quill got its quick capture shortcut, set once at start-up.
+struct ShortcutClaimed(bool);
+
+/// The quick capture shortcut as the menu shows it, and whether Quill has it.
+#[tauri::command]
+fn capture_shortcut(claimed: tauri::State<'_, ShortcutClaimed>) -> (String, bool) {
+    (desktop::SHORTCUT_LABEL.to_string(), claimed.0)
+}
+
+#[tauri::command]
+fn open_capture(app: tauri::AppHandle) {
+    desktop::toggle_capture(&app);
+}
+
 /// Serves pictures to the window: `qimg://localhost/<library path>` (on
 /// Windows, `http://qimg.localhost/<library path>`), percent-encoded. Only
 /// picture files inside the library can be fetched.
@@ -133,6 +153,10 @@ fn serve_image(app: &tauri::AppHandle, uri_path: &str) -> tauri::http::Response<
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // A second launch (say, from the Start menu while Quill is minimised)
+        // brings the running Quill to the front instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| desktop::show_main(app)))
+        .plugin(desktop::shortcut_plugin())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("qimg", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
@@ -142,11 +166,20 @@ pub fn run() {
         })
         .setup(|app| {
             let root = ensure_library(app.handle()).map_err(Box::<dyn std::error::Error>::from)?;
+            let handle = app.handle();
+            app.manage(ShortcutClaimed(desktop::register_shortcut(handle)));
+            desktop::prepare_capture(handle);
             std::thread::spawn(move || {
                 library::empty_old_trash(&root);
                 library::hide_trash(&root);
             });
             Ok(())
+        })
+        // The capture window waits hidden, so Quill quits when its main window closes.
+        .on_window_event(|window, event| {
+            if window.label() == desktop::MAIN && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             library_path,
@@ -161,7 +194,10 @@ pub fn run() {
             restore_item,
             save_image,
             copy_image,
-            discard_unsaved_images
+            discard_unsaved_images,
+            show_main,
+            open_capture,
+            capture_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running Quill");

@@ -6,5 +6,11 @@ export default defineConfig({
   clearScreen: false,
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   server: { port: 1420, strictPort: true },
-  build: { target: "es2022", outDir: "dist", emptyOutDir: true },
+  build: {
+    target: "es2022",
+    outDir: "dist",
+    emptyOutDir: true,
+    // Two pages: the main window and the quick capture window.
+    rollupOptions: { input: { main: "index.html", capture: "capture.html" } },
+  },
 });
