@@ -346,7 +346,7 @@ const top = T.el;
 top.dataset.tauriDragRegion = "";
 const tLeft = T.group();
 const libBtn = T.button(`${icons.library}<span>Library</span>`, `Library (${MOD}+L)`, () => lib.toggle(), tLeft);
-const fileBtn = T.button(`${icons.file}<span>File</span>`, "File", () => toggleMenu(), tLeft);
+const fileBtn = T.button(`${icons.menu}<span>Menu</span>`, "Menu", () => toggleMenu(), tLeft);
 const crumb = document.createElement("div");
 crumb.className = "crumb";
 crumb.dataset.tauriDragRegion = "";
@@ -412,7 +412,7 @@ if (os.inTauri) {
   void os.captureShortcut().then(({ keys, claimed }) => {
     kbd.textContent = claimed ? keys : "";
     // Another app got there first: say so once, softly, after the splash.
-    if (!claimed) setTimeout(() => flash(`Another app is using ${keys.split(" ").join("+")}. Quick capture is in the File menu.`, 6000), 2500);
+    if (!claimed) setTimeout(() => flash(`Another app is using ${keys.split(" ").join("+")}. Quick capture is in the Menu.`, 6000), 2500);
   });
 }
 menuItem("Print…", `${MOD} P`, () => openPrint());

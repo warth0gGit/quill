@@ -20,7 +20,7 @@ code-signed yet. Choose **More info**, then **Run anyway**.
 - Move the mouse to the bottom edge of the window for the Shelf. It sets the text
   size of the whole document, and the style of the next words you type.
 - Move the mouse to the top edge (or press **Alt**) for the top shelf: the Library,
-  File menu, line spacing, pages, print and the window buttons. **F11** is full screen.
+  Menu, line spacing, pages, print and the window buttons. **F11** is full screen.
 - **Ctrl+N** starts a new page. Saving is automatic.
 
 ## The library
@@ -59,7 +59,7 @@ To file it straight away, press **Tab**, start typing a folder name, and press
 puts the window away and keeps what you typed for next time.
 
 The shortcut works whenever Quill is open, even minimised. Closing Quill's window
-quits it, and the shortcut with it. **Quick capture** is also in the File menu. If
+quits it, and the shortcut with it. **Quick capture** is also in the Menu. If
 another app already uses Ctrl+Alt+Q, Quill tells you when it starts.
 
 ## Where your writing lives
