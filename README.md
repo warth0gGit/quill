@@ -34,13 +34,27 @@ edge to bring in the tree.
 - The bin moves things to the Trash. Every move and delete can be undone from the
   note at the bottom of the tree, and the Trash keeps things for 30 days.
 
-## Where your writing lives
+## Pictures
+
+Paste a picture (**Ctrl+V**), drag one in from File Explorer, or choose **Picture**
+on the bottom shelf. Pictures always go between paragraphs: a pasted one goes in
+below the paragraph you're in, and a dropped one where the glowing line shows.
+
+- Click a picture for the image bar: wrap left, centre, wrap right or wide; sizes
+  S, M, L and Full; a caption; replace; remove.
+- Drag a picture to move it. Drop it on the left or right to wrap text around it.
+- Drag a corner to resize. Sizes snap between the four widths, or past Full into Wide.
+- With a picture clicked: **←** **→** change the layout, **↑** **↓** the size,
+  **Delete** removes it, and **Enter** or **Esc** goes back to writing.
+
 
 Everything is saved in `Documents\Quill`, in the folders you make in the library.
 New pages go to `Documents\Quill\Inbox`. Deleted things wait in a hidden `.trash`
 folder there for 30 days.
 Each document is one ordinary `.html` file that opens in any web browser, so your
-writing is never locked inside the app.
+writing is never locked inside the app. A document's pictures are ordinary image
+files in a folder beside it with the same name plus "images" (the tree hides these
+folders). They move with their document and go to the Trash with it.
 
 ## Development
 

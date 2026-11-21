@@ -100,6 +100,90 @@ body.pages .sheet-layer { display: block; position: absolute; inset: 0; pointer-
 body.pages .ed { padding: 96px; min-height: 1056px; }
 .page-gap { display: block; pointer-events: none; user-select: none; }
 
+/* ------------------------------------------------------------ pictures */
+/* Pictures sit between paragraphs: centred, wrapped left or right, or wide.
+   Four widths, like the curated text sizes. Very tall pictures are capped
+   so one never fills more than most of a sheet. */
+.ed .fig { position: relative; margin: 0.4em auto 1.1em; width: 75%; user-select: none; transition: width 0.16s ease, margin 0.16s ease; --maxh: 640px; }
+.ed .fig[data-size="s"] { width: 33.3%; }
+.ed .fig[data-size="m"] { width: 50%; }
+.ed .fig[data-size="l"] { width: 75%; }
+.ed .fig[data-size="full"] { width: 100%; }
+.ed .fig[data-align="left"] { float: left; margin: 0.35em 1.4em 0.5em 0; clear: both; }
+.ed .fig[data-align="right"] { float: right; margin: 0.35em 0 0.5em 1.4em; clear: both; }
+.ed .fig[data-align="left"][data-size="s"], .ed .fig[data-align="right"][data-size="s"] { width: 30%; }
+.ed .fig[data-align="left"][data-size="m"], .ed .fig[data-align="right"][data-size="m"] { width: 42%; }
+.ed .fig[data-align="left"][data-size="l"], .ed .fig[data-align="right"][data-size="l"] { width: 55%; }
+.ed .fig[data-align="wide"] {
+  --bleed: clamp(12px, 5vw, 64px);
+  width: calc(100% + 2 * var(--bleed)); margin-left: calc(-1 * var(--bleed)); margin-right: calc(-1 * var(--bleed));
+}
+.ed .fig .frame {
+  position: relative; margin: 0 auto; border-radius: 6px; cursor: grab; touch-action: none;
+  width: min(100%, calc(var(--maxh) * var(--r, 100)));
+}
+.ed .fig img { display: block; width: 100%; height: auto; border-radius: 6px; pointer-events: none; -webkit-user-drag: none; }
+.ed .fig.missing .frame { aspect-ratio: 3 / 2; background: var(--hover); }
+.ed .fig.missing img { display: none; }
+.ed .fig.missing .frame::after {
+  content: "Picture not found"; position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 14px; color: var(--dim);
+}
+.ed .fig figcaption {
+  display: none; font-size: 15px; line-height: 1.45; color: var(--dim); font-style: italic; text-align: center;
+  padding-top: 8px; outline: none; user-select: text; cursor: text; caret-color: var(--cursor);
+}
+.ed .fig.cap figcaption { display: block; }
+.ed .fig[data-align="left"] figcaption, .ed .fig[data-align="right"] figcaption { text-align: left; }
+.ed .fig figcaption:empty::before { content: attr(data-ph); opacity: 0.6; }
+.ed .fig::selection, .ed .fig .frame *::selection { background: transparent; }
+.ed .fig.sel .frame { box-shadow: 0 0 0 2px var(--cursor), 0 0 18px 2px var(--glow); }
+.ed .fig.lifting .frame { opacity: 0.35; }
+.ed .fig .h {
+  position: absolute; bottom: -7px; width: 14px; height: 14px; border-radius: 50%; z-index: 1;
+  background: var(--paper); box-shadow: 0 0 0 2px var(--cursor), 0 0 10px var(--glow);
+  opacity: 0; pointer-events: none; transition: opacity 0.15s;
+}
+.ed .fig .h.hl { left: -7px; cursor: nesw-resize; }
+.ed .fig .h.hr { right: -7px; cursor: nwse-resize; }
+.ed .fig.sel .h { opacity: 1; pointer-events: auto; }
+.ed .fig .sizetag {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none;
+  font-size: 13px; background: var(--paper); color: var(--cursor); border-radius: 999px; padding: 3px 11px;
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.5); opacity: 0; transition: opacity 0.15s;
+}
+.ed .fig.resizing .sizetag { opacity: 1; }
+.ed .fig.arrive .frame { animation: arrive 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes arrive {
+  0% { opacity: 0; transform: scale(0.96); box-shadow: 0 0 0 2px var(--cursor), 0 0 40px 10px var(--glow); }
+  100% { opacity: 1; transform: none; }
+}
+
+/* The glowing line that shows where a picture will land, and the picture in hand. */
+.pic-drop { position: fixed; left: 0; top: 0; height: 0; z-index: 8; pointer-events: none; opacity: 0; transition: opacity 0.12s; }
+.pic-drop.on { opacity: 1; }
+.pic-drop i {
+  position: absolute; top: -1.5px; height: 3px; border-radius: 2px; background: var(--cursor);
+  box-shadow: 0 0 12px 2px var(--glow); transition: left 0.12s ease, width 0.12s ease;
+}
+.pic-drop span {
+  position: absolute; top: 8px; transform: translateX(-50%); white-space: nowrap; transition: left 0.12s ease;
+  font-size: 12px; color: var(--cursor); background: var(--paper); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 9px;
+}
+.pic-ghost {
+  position: fixed; left: 0; top: 0; width: 110px; border-radius: 6px; pointer-events: none; z-index: 50;
+  box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.5); opacity: 0.92;
+}
+
+/* The image bar, in the same style as Float. */
+.tb.imgbar { max-width: calc(100vw - 16px); overflow-x: auto; }
+.tb.imgbar svg { display: block; }
+.tb .pic-size { font-size: 13px; letter-spacing: 0.02em; }
+.tb .pic-word { font-size: 13.5px; }
+.tb button:disabled { opacity: 0.35; cursor: default; }
+.tb button:disabled:hover { background: none; }
+.tb button.danger:hover { color: var(--signal); }
+
 /* ------------------------------------------------------------ the cursor */
 /* Cobalt, 2.5px wide, a 5px glow at 30%, breathing every 2.8s,
    hopping to each new spot in 170ms. Steady while you type. */
@@ -328,6 +412,10 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
   .caret, .tb, .status, .menu, .print-sheet, .sheet-layer, .page-gap, .library, #q-splash { display: none !important; }
   .ed { padding: 0 !important; min-height: 0 !important; }
   .ed p, .ed li { orphans: 1; widows: 1; } /* break exactly where the on-screen sheets do */
+  .ed .fig { break-inside: avoid; }
+  .ed .fig .h, .ed .fig .sizetag, .pic-drop, .pic-ghost { display: none !important; }
+  .ed .fig.sel .frame { box-shadow: none; }
+  .ed .fig figcaption:empty { display: none; }
   body.print-black .ed, body.print-black .ed [data-ink] { color: #000 !important; }
   body.print-black .ed ul > li::before, body.print-black .ed ol > li::marker { color: #000; }
 }

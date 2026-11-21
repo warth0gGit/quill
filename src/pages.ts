@@ -64,6 +64,15 @@ function spacer(height: number, inline: boolean): HTMLElement {
 function measureLines(view: EditorView, originTop: number, originLeft: number): Line[] {
   const lines: Line[] = [];
   view.state.doc.descendants((node, pos) => {
+    if (node.type.name === "figure") {
+      // A picture moves to the next sheet whole, caption and all.
+      const dom = view.nodeDOM(pos) as HTMLElement | null;
+      if (dom?.getBoundingClientRect) {
+        const r = dom.getBoundingClientRect();
+        lines.push({ top: r.top - originTop, bottom: r.bottom - originTop, breakPos: pos, inline: false });
+      }
+      return false;
+    }
     if (!node.isTextblock) return true;
     const dom = view.nodeDOM(pos) as HTMLElement | null;
     if (!dom || !(dom instanceof HTMLElement)) return false;

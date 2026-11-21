@@ -137,7 +137,9 @@ fn list_dir(root: &Path, rel: &str, depth: usize) -> Vec<Entry> {
     for item in read.flatten() {
         let name = item.file_name().to_string_lossy().into_owned();
         let Ok(ft) = item.file_type() else { continue };
-        if ft.is_dir() && valid_folder_name(&name) && depth < MAX_DEPTH {
+        if ft.is_dir() && is_images_folder(&dir, &name) {
+            continue; // a document's pictures: shown inside the document, not in the tree
+        } else if ft.is_dir() && valid_folder_name(&name) && depth < MAX_DEPTH {
             let path = join_rel(rel, &name);
             let children = list_dir(root, &path, depth + 1);
             folders.push(Entry::Folder { name, path, children });
@@ -257,9 +259,209 @@ pub fn move_item(root: &Path, rel: &str, into: &str) -> Result<String> {
     if !dest.is_dir() {
         return Err("That folder no longer exists".into());
     }
+    if from.is_file() {
+        return place_doc(&from, &dest, last_seg(rel)).map(|name| join_rel(into, &name));
+    }
     let name = free_name(&dest, last_seg(rel));
     fs::rename(&from, dest.join(&name)).map_err(|e| format!("Couldn't move it: {e}"))?;
     Ok(join_rel(into, &name))
+}
+
+/* ------------------------------------------------------------------ pictures */
+
+const IMAGES_SUFFIX: &str = " images";
+const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+
+/// "On slowness.html" -> "On slowness images".
+pub fn images_folder_name(doc_name: &str) -> Option<String> {
+    doc_name.strip_suffix(".html").filter(|s| !s.is_empty()).map(|stem| format!("{stem}{IMAGES_SUFFIX}"))
+}
+
+/// Is `name` (a folder inside `dir`) the pictures folder of a document there?
+fn is_images_folder(dir: &Path, name: &str) -> bool {
+    name.strip_suffix(IMAGES_SUFFIX).is_some_and(|stem| dir.join(format!("{stem}.html")).is_file())
+}
+
+/// What kind of picture these bytes are, from their first few bytes. Anything
+/// else is refused, whatever its file name says.
+pub fn sniff_image(bytes: &[u8]) -> Option<&'static str> {
+    let starts = |sig: &[u8]| bytes.starts_with(sig);
+    if starts(b"\x89PNG\r\n\x1a\n") {
+        Some("png")
+    } else if starts(b"\xff\xd8\xff") {
+        Some("jpg")
+    } else if starts(b"GIF87a") || starts(b"GIF89a") {
+        Some("gif")
+    } else if bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("webp")
+    } else if starts(b"BM") && bytes.len() > 26 {
+        Some("bmp")
+    } else if bytes.len() > 12 && &bytes[4..8] == b"ftyp" && (&bytes[8..12] == b"avif" || &bytes[8..12] == b"avis") {
+        Some("avif")
+    } else {
+        None
+    }
+}
+
+pub fn image_mime(name: &str) -> Option<&'static str> {
+    let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        _ => return None,
+    })
+}
+
+/// A tidy file name stem from whatever the picture was called ("" for a pasted one).
+fn picture_stem(suggested: &str) -> String {
+    let base = suggested.rsplit(['/', '\\']).next().unwrap_or("");
+    let base = base.rsplit_once('.').map_or(base, |(stem, _)| stem);
+    let mut out: String = base
+        .chars()
+        .map(|c| if c.is_control() || "<>:\"/\\|?*%#".contains(c) { '-' } else { c })
+        .take(60)
+        .collect();
+    out = out.trim().trim_matches('.').trim().to_string();
+    if out.is_empty() || !valid_folder_name(&out) {
+        "picture".into()
+    } else {
+        out
+    }
+}
+
+/// "photo.png", then "photo 2.png", and so on, until the name is free.
+fn free_file_name(dir: &Path, stem: &str, ext: &str) -> String {
+    (1..)
+        .map(|n| if n == 1 { format!("{stem}.{ext}") } else { format!("{stem} {n}.{ext}") })
+        .find(|candidate| !dir.join(candidate).exists())
+        .expect("some name is free")
+}
+
+/// Keep a picture for the document at `doc` (a library path). Returns where
+/// the document finds it: a path relative to the document's own folder, such
+/// as `On slowness images/photo.png`.
+pub fn save_image(root: &Path, doc: &str, suggested: &str, bytes: &[u8]) -> Result<String> {
+    let doc_name = last_seg(doc);
+    if !valid_doc_name(doc_name) {
+        return Err(format!("That isn't a Quill document: {doc}"));
+    }
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err("That picture is too large (the limit is 64 MB)".into());
+    }
+    let ext = sniff_image(bytes).ok_or("That isn't a picture Quill can show (try PNG, JPEG, GIF or WebP)")?;
+    let folder = images_folder_name(doc_name).expect("valid doc name");
+    let dir = resolve(root, parent_rel(doc))?.join(&folder);
+    fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create the pictures folder: {e}"))?;
+    let name = free_file_name(&dir, &picture_stem(suggested), ext);
+    fs::write(dir.join(&name), bytes).map_err(|e| format!("Couldn't save the picture: {e}"))?;
+    Ok(format!("{folder}/{name}"))
+}
+
+/// Copy a picture (a library path) into the pictures folder of `doc`, for a
+/// picture pasted from another document. Returns the new document-relative path.
+pub fn copy_image(root: &Path, from: &str, doc: &str) -> Result<String> {
+    let src = resolve(root, from)?;
+    if image_mime(last_seg(from)).is_none() || !src.is_file() {
+        return Err("That picture no longer exists".into());
+    }
+    let bytes = fs::read(&src).map_err(|e| format!("Couldn't read the picture: {e}"))?;
+    save_image(root, doc, last_seg(from), &bytes)
+}
+
+/// A picture's bytes and type, for showing it in the window.
+pub fn read_image(root: &Path, rel: &str) -> Result<(Vec<u8>, &'static str)> {
+    let mime = image_mime(last_seg(rel)).ok_or("Not a picture")?;
+    let bytes = fs::read(resolve(root, rel)?).map_err(|e| format!("Couldn't read {rel}: {e}"))?;
+    Ok((bytes, mime))
+}
+
+/// Forget the pictures of a document that was never saved (pasted, then
+/// undone). Only ever removes a pictures folder whose document doesn't exist.
+pub fn discard_unsaved_images(root: &Path, doc: &str) -> Result<()> {
+    let Some(folder) = images_folder_name(last_seg(doc)).filter(|_| valid_doc_name(last_seg(doc))) else {
+        return Ok(());
+    };
+    let doc_path = resolve(root, doc)?;
+    let pics = doc_path.with_file_name(folder);
+    if !doc_path.exists() && pics.is_dir() {
+        fs::remove_dir_all(&pics).map_err(|e| format!("Couldn't tidy up pictures: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Like JavaScript's encodeURIComponent, which the page uses to write a
+/// picture's `src` into the document.
+fn encode_component(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Undo `%XX` escapes (as in a picture's address). Invalid escapes are kept as written.
+pub fn decode_component(s: &str) -> String {
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(hi * 16 + lo);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// A document name in `dir` that is free for both the document and its
+/// pictures folder ("x.html" -> "x 2.html" if either is taken).
+fn free_doc_name(dir: &Path, name: &str) -> String {
+    let stem = name.strip_suffix(".html").unwrap_or(name);
+    (1..)
+        .map(|n| if n == 1 { stem.to_string() } else { format!("{stem} {n}") })
+        .find(|s| !dir.join(format!("{s}.html")).exists() && !dir.join(format!("{s}{IMAGES_SUFFIX}")).exists())
+        .map(|s| format!("{s}.html"))
+        .expect("some name is free")
+}
+
+/// Move the document at `from` (and its pictures folder, if it has one) into
+/// `dest`. If its name was taken there, the document is renamed and the
+/// pictures it points to are renamed to match. Returns its new file name.
+fn place_doc(from: &Path, dest: &Path, name: &str) -> Result<String> {
+    let new_name = free_doc_name(dest, name);
+    let old_pics = images_folder_name(name).map(|f| from.with_file_name(f));
+    let new_folder = images_folder_name(&new_name);
+    fs::rename(from, dest.join(&new_name)).map_err(|e| format!("Couldn't move it: {e}"))?;
+    if let (Some(old_pics), Some(new_folder)) = (old_pics, new_folder) {
+        if old_pics.is_dir() {
+            fs::rename(&old_pics, dest.join(&new_folder)).map_err(|e| format!("Couldn't move its pictures: {e}"))?;
+            if new_name != name {
+                let old_folder = images_folder_name(name).expect("doc name");
+                let path = dest.join(&new_name);
+                let html = fs::read_to_string(&path).map_err(|e| format!("Couldn't update its pictures: {e}"))?;
+                let html = html.replace(
+                    &format!("src=\"{}/", encode_component(&old_folder)),
+                    &format!("src=\"{}/", encode_component(&new_folder)),
+                );
+                write_atomically(&path, &html).map_err(|e| format!("Couldn't update its pictures: {e}"))?;
+            }
+        }
+    }
+    Ok(new_name)
 }
 
 /* ------------------------------------------------------------------ trash */
@@ -290,6 +492,13 @@ pub fn trash(root: &Path, rel: &str) -> Result<String> {
         let _ = fs::remove_dir_all(&slot);
         return Err(format!("Couldn't move it to the Trash: {e}"));
     }
+    // A document's pictures go with it.
+    if let Some(images) = images_folder_name(last_seg(rel)) {
+        let pics = from.with_file_name(&images);
+        if pics.is_dir() {
+            let _ = fs::rename(&pics, slot.join(&images));
+        }
+    }
     Ok(id)
 }
 
@@ -306,8 +515,14 @@ pub fn restore(root: &Path, id: &str) -> Result<String> {
     let parent = parent_rel(origin);
     let dir = resolve(root, parent)?;
     fs::create_dir_all(&dir).map_err(|e| format!("Couldn't recreate {parent}: {e}"))?;
-    let name = free_name(&dir, last_seg(origin));
-    fs::rename(slot.join(last_seg(origin)), dir.join(&name)).map_err(|e| format!("Couldn't restore it: {e}"))?;
+    let item = slot.join(last_seg(origin));
+    let name = if item.is_file() {
+        place_doc(&item, &dir, last_seg(origin))?
+    } else {
+        let name = free_name(&dir, last_seg(origin));
+        fs::rename(&item, dir.join(&name)).map_err(|e| format!("Couldn't restore it: {e}"))?;
+        name
+    };
     let _ = fs::remove_dir_all(&slot);
     Ok(join_rel(parent, &name))
 }
@@ -491,5 +706,66 @@ mod tests {
         empty_old_trash(r);
         assert!(!old.exists());
         assert!(r.join(TRASH).join(fresh).exists());
+    }
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+
+    #[test]
+    fn pictures_are_kept_beside_their_document() {
+        let lib = TempLib::new("pics");
+        let r = &lib.0;
+        assert!(save_image(r, "Inbox/a.html", "x.png", b"not a picture").is_err());
+        assert_eq!(save_image(r, "Inbox/a.html", "", PNG).unwrap(), "a images/picture.png");
+        assert_eq!(save_image(r, "Inbox/a.html", "C:\\Users\\me\\Lake: dawn?.PNG", PNG).unwrap(), "a images/Lake- dawn-.png");
+        assert_eq!(save_image(r, "Inbox/a.html", "picture.jpg", PNG).unwrap(), "a images/picture 2.png");
+        assert!(save_image(r, "../a.html", "", PNG).is_err());
+        let (bytes, mime) = read_image(r, "Inbox/a images/picture.png").unwrap();
+        assert_eq!((bytes.as_slice(), mime), (PNG, "image/png"));
+        assert!(read_image(r, "Inbox/a.html").is_err(), "only pictures");
+
+        // The tree hides the pictures folder once its document exists.
+        save(r, "Inbox/a.html", &doc("A")).unwrap();
+        let Entry::Folder { children, .. } = list(r) else { panic!() };
+        let Entry::Folder { children: inbox, .. } = &children[0] else { panic!() };
+        assert_eq!(inbox.len(), 1);
+
+        // Copying a picture into another document.
+        assert_eq!(copy_image(r, "Inbox/a images/picture.png", "Inbox/b.html").unwrap(), "b images/picture.png");
+
+        // A never-saved document's pictures can be discarded; a saved one's can't.
+        discard_unsaved_images(r, "Inbox/b.html").unwrap();
+        assert!(!r.join("Inbox/b images").exists());
+        discard_unsaved_images(r, "Inbox/a.html").unwrap();
+        assert!(r.join("Inbox/a images/picture.png").is_file());
+    }
+
+    #[test]
+    fn pictures_travel_with_their_document() {
+        let lib = TempLib::new("pics-move");
+        let r = &lib.0;
+        create_folder(r, "", "Essays").unwrap();
+        let src = save_image(r, "Inbox/a.html", "lake.png", PNG).unwrap();
+        save(r, "Inbox/a.html", &format!("<title>A</title><img src=\"{}\">", src.replace(' ', "%20"))).unwrap();
+        save(r, "Essays/a.html", &doc("Other A")).unwrap();
+
+        // Moving onto a name that's taken renames both, and the document follows.
+        assert_eq!(move_item(r, "Inbox/a.html", "Essays").unwrap(), "Essays/a 2.html");
+        assert!(!r.join("Inbox/a images").exists());
+        assert!(r.join("Essays/a 2 images/lake.png").is_file());
+        assert!(read(r, "Essays/a 2.html").unwrap().contains("src=\"a%202%20images/lake.png\""));
+
+        // To the Trash and back, pictures included.
+        let id = trash(r, "Essays/a 2.html").unwrap();
+        assert!(!r.join("Essays/a 2 images").exists());
+        assert_eq!(restore(r, &id).unwrap(), "Essays/a 2.html");
+        assert!(r.join("Essays/a 2 images/lake.png").is_file());
+    }
+
+    #[test]
+    fn percent_codes() {
+        assert_eq!(encode_component("a 2 images"), "a%202%20images");
+        assert_eq!(decode_component("Inbox%2Fa%20images%2Fcaf%C3%A9.png"), "Inbox/a images/café.png");
+        assert_eq!(decode_component("100%"), "100%");
+        assert_eq!(decode_component("%zz"), "%zz");
     }
 }

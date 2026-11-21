@@ -6,8 +6,13 @@
  *
  * Paths are relative to the library and use "/", e.g. "Essays/2026-11-20-160412.html".
  * The empty string is the library itself.
+ *
+ * A document's pictures live in a folder named after it, beside it:
+ * "Inbox/2026-11-20-160412.html" keeps them in "Inbox/2026-11-20-160412 images/".
+ * The page refers to them relative to its own folder, so the file reads
+ * correctly in any browser and wherever the document is moved.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 
 export type Spacing = "tight" | "comfortable" | "airy";
 
@@ -44,6 +49,8 @@ export const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 export const joinPath = (parent: string, name: string) => (parent ? `${parent}/${name}` : name);
 /** Is `path` the item at `item`, or inside it? */
 export const within = (path: string, item: string) => path === item || path.startsWith(item + "/");
+/** "Inbox/x.html" -> "x images", the folder beside it that holds its pictures. */
+export const imagesFolderOf = (docPath: string) => nameOf(docPath).replace(/\.html$/, "") + " images";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -63,6 +70,11 @@ export function toFile(title: string, spacing: Spacing, next: string, bodyHtml: 
 body{max-width:62ch;margin:56px auto;padding:0 20px;font-family:Spectral,Georgia,serif;line-height:${LINE_HEIGHT[spacing]};color:#2B2D31;background:#FBFBF9;font-size:19px}
 p{margin:0 0 .85em}s{opacity:.45}ul,ol{margin:0 0 .85em;padding-left:1.6em}li p{margin:0}ul{list-style:none}ul>li{position:relative}ul>li::before{content:"\\2022";position:absolute;left:-1.05em;color:#1F4FD1;font-weight:600}ol>li::marker{color:#1F4FD1}
 [data-size=small]{font-size:.84em}[data-size=large]{font-size:1.32em}[data-size=title]{font-size:1.85em;line-height:1.25}
+figure{margin:.4em auto 1.1em;width:75%}figure img{display:block;width:100%;height:auto;border-radius:6px}figcaption{font-size:.8em;line-height:1.45;opacity:.7;font-style:italic;text-align:center;padding-top:8px}
+figure[data-size=s]{width:33.3%}figure[data-size=m]{width:50%}figure[data-size=full]{width:100%}
+figure[data-align=left]{float:left;margin:.35em 1.4em .5em 0;clear:both}figure[data-align=right]{float:right;margin:.35em 0 .5em 1.4em;clear:both}
+figure[data-align=left][data-size=s],figure[data-align=right][data-size=s]{width:30%}figure[data-align=left][data-size=m],figure[data-align=right][data-size=m]{width:42%}figure[data-align=left][data-size=l],figure[data-align=right][data-size=l]{width:55%}
+figure[data-align=left] figcaption,figure[data-align=right] figcaption{text-align:left}figure[data-align=wide]{width:calc(100% + 128px);margin-left:-64px;margin-right:-64px}
 [data-ink=midnight]{color:#16275A}[data-ink=cobalt]{color:#1F4FD1}[data-ink=azure]{color:#1F73B8}[data-ink=signal]{color:#D2232A}
 @media (prefers-color-scheme:dark){body{background:#17191C;color:#E3E4E0}[data-ink=midnight]{color:#9DAEE6}[data-ink=cobalt]{color:#7C9CFF}[data-ink=azure]{color:#6CB4F0}[data-ink=signal]{color:#FF6B6B}}
 </style>
@@ -93,6 +105,16 @@ interface MockState {
   trash: Record<string, { origin: string; folders: string[]; docs: MockState["docs"] }>;
 }
 const MOCK_KEY = "quill:library";
+/** Pictures in the browser preview: library path -> object URL. Kept for this session only. */
+const mockImages = new Map<string, string>();
+const moveImages = (from: string, to: string) => {
+  for (const [p, url] of [...mockImages]) {
+    if (within(p, from)) {
+      mockImages.delete(p);
+      mockImages.set(to + p.slice(from.length), url);
+    }
+  }
+};
 const BAD_NAME = /[<>:"/\\|?*\u0000-\u001f]/;
 const validName = (n: string) => !!n && n.length <= 120 && n.trim() === n && !n.startsWith(".") && !n.endsWith(".") && !BAD_NAME.test(n);
 
@@ -119,6 +141,8 @@ function freeName(s: MockState, dir: string, name: string) {
   for (let n = 2; ; n++) if (!exists(s, joinPath(dir, `${stem} ${n}${ext}`))) return `${stem} ${n}${ext}`;
 }
 function relocate(s: MockState, from: string, to: string) {
+  moveImages(from, to);
+  if (from.endsWith(".html")) moveImages(joinPath(parentOf(from), imagesFolderOf(from)), joinPath(parentOf(to), imagesFolderOf(to)));
   s.folders = s.folders.map((f) => (within(f, from) ? to + f.slice(from.length) : f));
   for (const d of Object.keys(s.docs)) {
     if (within(d, from)) {
@@ -212,11 +236,39 @@ const mock = {
     if (!t) throw new Error("That's no longer in the Trash");
     const to = joinPath(parentOf(t.origin), freeName(s, parentOf(t.origin), nameOf(t.origin)));
     const move = (p: string) => to + p.slice(t.origin.length);
+    moveImages(t.origin, to);
     s.folders.push(...t.folders.map(move));
     for (const [p, d] of Object.entries(t.docs)) s.docs[move(p)] = d;
     delete s.trash[id];
     mockSave(s);
     return to;
+  },
+  saveImage(doc: string, name: string, bytes: Uint8Array, type: string) {
+    if (!/^image\//.test(type)) throw new Error("That isn't a picture Quill can show (try PNG, JPEG, GIF or WebP)");
+    const folder = imagesFolderOf(doc);
+    const ext = type === "image/jpeg" ? "jpg" : type.slice(6).replace(/\W.*$/, "") || "png";
+    const stem = (name.replace(/^.*[\\/]/, "").replace(/\.[^.]*$/, "").replace(/[<>:"/\\|?*%#\u0000-\u001f]/g, "-").trim() || "picture").slice(0, 60);
+    const dir = joinPath(parentOf(doc), folder);
+    let file = `${stem}.${ext}`;
+    for (let n = 2; mockImages.has(joinPath(dir, file)); n++) file = `${stem} ${n}.${ext}`;
+    mockImages.set(joinPath(dir, file), URL.createObjectURL(new Blob([bytes as BlobPart], { type })));
+    return `${folder}/${file}`;
+  },
+  copyImage(from: string, doc: string) {
+    const url = mockImages.get(from);
+    if (!url) throw new Error("That picture no longer exists");
+    const folder = imagesFolderOf(doc);
+    const dir = joinPath(parentOf(doc), folder);
+    let file = nameOf(from);
+    const [stem, ext] = [file.replace(/\.[^.]*$/, ""), file.slice(file.lastIndexOf("."))];
+    for (let n = 2; mockImages.has(joinPath(dir, file)); n++) file = `${stem} ${n}${ext}`;
+    mockImages.set(joinPath(dir, file), url);
+    return `${folder}/${file}`;
+  },
+  discardUnsavedImages(doc: string) {
+    if (doc in mockLoad().docs) return;
+    const dir = joinPath(parentOf(doc), imagesFolderOf(doc));
+    for (const p of [...mockImages.keys()]) if (within(p, dir)) mockImages.delete(p);
   },
 };
 
@@ -241,6 +293,25 @@ export const library = {
   trash: (path: string) => call<string>("trash_item", { path }, () => mock.trash(path)),
   restore: (id: string) => call<string>("restore_item", { id }, () => mock.restore(id)),
   rootPath: () => call<string>("library_path", {}, () => "browser preview (not saved to disk)"),
+  /**
+   * Keeps a picture for the document at `doc` and returns the path the page
+   * uses for it, relative to the document's folder ("x images/photo.png").
+   * The bytes go to Rust as they are, not as JSON.
+   */
+  saveImage: async (doc: string, file: Blob, name = ""): Promise<string> => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!inTauri) return mock.saveImage(doc, name, bytes, file.type);
+    return invoke<string>("save_image", bytes, {
+      headers: { "x-doc": encodeURIComponent(doc), "x-name": encodeURIComponent(name) },
+    });
+  },
+  /** Copies a picture (a library path) into `doc`'s pictures folder. */
+  copyImage: (from: string, doc: string) => call<string>("copy_image", { from, doc }, () => mock.copyImage(from, doc)),
+  /** Removes the pictures folder of a document that never got saved. */
+  discardUnsavedImages: (doc: string) =>
+    call<void>("discard_unsaved_images", { doc }, () => mock.discardUnsavedImages(doc)),
+  /** An address the window can show a picture from (a library path). */
+  imageUrl: (path: string) => (inTauri ? convertFileSrc(path, "qimg") : (mockImages.get(path) ?? "")),
 };
 
 /** Error text from Rust (a string) or the stand-in (an Error). */

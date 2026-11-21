@@ -3,7 +3,8 @@
 //! The library lives in `Documents\Quill`. Every document is one readable
 //! `.html` file, in folders you arrange yourself. New pages land in
 //! `Documents\Quill\Inbox`. Deleted things wait in a hidden `.trash` folder
-//! for 30 days, so Undo always works.
+//! for 30 days, so Undo always works. Pictures live in a folder beside their
+//! document and are shown in the window through the `qimg:` address scheme.
 
 mod library;
 
@@ -81,10 +82,64 @@ async fn restore_item(app: tauri::AppHandle, id: String) -> Result<String, Strin
     library::restore(&ensure_library(&app)?, &id)
 }
 
+/// Keeps a picture for a document. The picture's bytes arrive as the raw
+/// request body (no JSON), with the document's path and the picture's
+/// original name in percent-encoded headers. Returns the document-relative
+/// path to write into the page, e.g. `On slowness images/photo.png`.
+#[tauri::command]
+async fn save_image(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("The picture didn't arrive".into());
+    };
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(library::decode_component)
+            .unwrap_or_default()
+    };
+    library::save_image(&ensure_library(&app)?, &header("x-doc"), &header("x-name"), bytes)
+}
+
+#[tauri::command]
+async fn copy_image(app: tauri::AppHandle, from: String, doc: String) -> Result<String, String> {
+    library::copy_image(&ensure_library(&app)?, &from, &doc)
+}
+
+#[tauri::command]
+async fn discard_unsaved_images(app: tauri::AppHandle, doc: String) -> Result<(), String> {
+    library::discard_unsaved_images(&ensure_library(&app)?, &doc)
+}
+
+/// Serves pictures to the window: `qimg://localhost/<library path>` (on
+/// Windows, `http://qimg.localhost/<library path>`), percent-encoded. Only
+/// picture files inside the library can be fetched.
+fn serve_image(app: &tauri::AppHandle, uri_path: &str) -> tauri::http::Response<Vec<u8>> {
+    let rel = library::decode_component(uri_path.trim_start_matches('/'));
+    let found = ensure_library(app).and_then(|root| library::read_image(&root, &rel));
+    let builder = tauri::http::Response::builder();
+    match found {
+        Ok((bytes, mime)) => builder
+            .status(200)
+            .header("Content-Type", mime)
+            .header("Cache-Control", "no-cache")
+            .body(bytes),
+        Err(e) => builder.status(404).header("Content-Type", "text/plain").body(e.into_bytes()),
+    }
+    .expect("a valid response")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .register_asynchronous_uri_scheme_protocol("qimg", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let path = request.uri().path().to_string();
+            // Read the file off the main thread.
+            std::thread::spawn(move || responder.respond(serve_image(&app, &path)));
+        })
         .setup(|app| {
             let root = ensure_library(app.handle()).map_err(Box::<dyn std::error::Error>::from)?;
             std::thread::spawn(move || {
@@ -103,7 +158,10 @@ pub fn run() {
             rename_folder,
             move_item,
             trash_item,
-            restore_item
+            restore_item,
+            save_image,
+            copy_image,
+            discard_unsaved_images
         ])
         .run(tauri::generate_context!())
         .expect("error while running Quill");
