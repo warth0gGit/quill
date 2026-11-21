@@ -6,6 +6,7 @@
 //! for 30 days, so Undo always works. Pictures live in a folder beside their
 //! document and are shown in the window through the `qimg:` address scheme.
 
+mod desktop;
 mod library;
 
 use library::Entry;
@@ -112,6 +113,38 @@ async fn discard_unsaved_images(app: tauri::AppHandle, doc: String) -> Result<()
     library::discard_unsaved_images(&ensure_library(&app)?, &doc)
 }
 
+/// Closing the window keeps Quill running in the tray, so quick capture
+/// works at any time. (Quit from the tray icon.)
+#[tauri::command]
+fn keeps_running() -> bool {
+    true
+}
+
+#[tauri::command]
+fn quit_now(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+fn autostart_enabled(app: tauri::AppHandle) -> bool {
+    desktop::autostart_enabled(&app)
+}
+
+#[tauri::command]
+fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
+    desktop::set_autostart(&app, on)
+}
+
+#[tauri::command]
+fn show_main(app: tauri::AppHandle) {
+    desktop::show_main(&app);
+}
+
+#[tauri::command]
+fn open_capture(app: tauri::AppHandle) {
+    desktop::toggle_capture(&app);
+}
+
 /// Serves pictures to the window: `qimg://localhost/<library path>` (on
 /// Windows, `http://qimg.localhost/<library path>`), percent-encoded. Only
 /// picture files inside the library can be fetched.
@@ -133,6 +166,14 @@ fn serve_image(app: &tauri::AppHandle, uri_path: &str) -> tauri::http::Response<
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // A second launch (say, from the Start menu while Quill is in the tray)
+        // brings the running Quill to the front instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| desktop::show_main(app)))
+        .plugin(desktop::shortcut_plugin())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![desktop::BACKGROUND_ARG]),
+        ))
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("qimg", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
@@ -142,6 +183,17 @@ pub fn run() {
         })
         .setup(|app| {
             let root = ensure_library(app.handle()).map_err(Box::<dyn std::error::Error>::from)?;
+            let handle = app.handle();
+            if let Err(e) = desktop::tray(handle) {
+                eprintln!("Quill: no tray icon: {e}");
+            }
+            desktop::register_shortcut(handle);
+            desktop::first_run_autostart(handle);
+            desktop::prepare_capture(handle);
+            // Started at sign-in: wait quietly in the tray. Otherwise, open.
+            if !std::env::args().any(|a| a == desktop::BACKGROUND_ARG) {
+                desktop::show_main(handle);
+            }
             std::thread::spawn(move || {
                 library::empty_old_trash(&root);
                 library::hide_trash(&root);
@@ -161,7 +213,13 @@ pub fn run() {
             restore_item,
             save_image,
             copy_image,
-            discard_unsaved_images
+            discard_unsaved_images,
+            keeps_running,
+            quit_now,
+            autostart_enabled,
+            set_autostart,
+            show_main,
+            open_capture
         ])
         .run(tauri::generate_context!())
         .expect("error while running Quill");

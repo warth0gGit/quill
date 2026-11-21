@@ -396,16 +396,38 @@ const menuItem = (label: string, kbd: string, run: () => void) => {
 menuItem("New page", `${MOD} N`, () => void newPage());
 menuItem("Library", `${MOD} L`, () => void lib.open(true));
 menuItem("Insert picture…", "", () => pictures.choose());
+if (os.inTauri) {
+  menuItem("Quick capture", "Ctrl Alt Space", () => void os.openCapture());
+  menu.appendChild(document.createElement("hr"));
+  menuItem("Start with Windows", "", () => void toggleStartup());
+}
 menuItem("Print…", `${MOD} P`, () => openPrint());
 menu.appendChild(document.createElement("hr"));
 menuItem("Show in File Explorer", "", () => void os.showInExplorer(savedPath ?? libraryRoot));
 menu.appendChild(Object.assign(document.createElement("div"), { className: "ver", textContent: `Quill ${__APP_VERSION__}` }));
+
+/** "Start with Windows" shows a tick when it's on. */
+const startupItem = () => [...menu.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Start with Windows"));
+async function syncStartup() {
+  const on = await os.startsWithWindows();
+  const kbd = startupItem()?.querySelector("kbd");
+  if (kbd) kbd.textContent = on ? "✓" : "";
+}
+async function toggleStartup() {
+  try {
+    await os.setStartsWithWindows(!(await os.startsWithWindows()));
+  } catch (e) {
+    flash(errorText(e));
+  }
+  void syncStartup();
+}
 
 function toggleMenu() {
   if (!menu.hidden) {
     menu.hidden = true;
     return;
   }
+  void syncStartup();
   const r = fileBtn.getBoundingClientRect();
   menu.style.left = `${r.left}px`;
   menu.style.top = `${r.bottom + 6}px`;
@@ -624,7 +646,15 @@ function flash(text: string) {
 }
 
 editor.on("update", scheduleSave);
-os.onClose(saveNow);
+// Closing the window keeps Quill in the tray; next time it opens on a fresh page.
+os.onClose(saveNow, () => {
+  forgetUnsaved();
+  startBlank();
+  lib.close();
+});
+os.onAppEvent("quill://new-page", () => void newPage());
+os.onAppEvent("quill://quit", () => void saveNow().finally(() => void os.quitNow()));
+os.onAppEvent("library://changed", () => void lib.refresh());
 
 /* --------------------------------------------------------------- new page, open */
 

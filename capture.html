@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quick capture</title>
+  </head>
+  <body class="capture">
+    <main class="cap">
+      <div class="cap-text" id="cap-text"></div>
+      <div class="cap-folders" id="cap-folders" hidden>
+        <input id="cap-filter" type="text" placeholder="Folder…" autocomplete="off" spellcheck="false" aria-label="Find a folder" />
+        <div class="cap-list" id="cap-list" role="listbox" aria-label="Folders"></div>
+      </div>
+      <div class="cap-bar" data-tauri-drag-region>
+        <button type="button" class="chip" id="cap-chip" title="Choose a folder (Tab)">Save to: <b>Inbox</b></button>
+        <span class="hint" data-tauri-drag-region>Tab for a folder</span>
+        <span class="hint end" data-tauri-drag-region>Enter to save · Esc to close</span>
+      </div>
+      <span class="caret" id="caret" aria-hidden="true"></span>
+      <div class="cap-done" id="cap-done" aria-live="polite"></div>
+    </main>
+    <script type="module" src="/src/capture.ts"></script>
+  </body>
+</html>
