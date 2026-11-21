@@ -33,6 +33,11 @@ import { bar, icons, MOD } from "./ui";
 import * as os from "./platform";
 
 const page = document.getElementById("page")!;
+/** The mouse button is down on the page (a click, or a drag to select). */
+let selecting = false;
+addEventListener("pointerdown", (e) => (selecting = e.button === 0), true);
+addEventListener("pointerup", () => (selecting = false), true);
+addEventListener("pointercancel", () => (selecting = false), true);
 const sheetLayer = document.getElementById("sheet-layer")!;
 const caret = document.getElementById("caret")!;
 const status = document.getElementById("status")!;
@@ -91,8 +96,12 @@ const editor = new Editor({
     attributes: { class: "ed", spellcheck: "true", "aria-label": "Page" },
     // Typewriter scrolling: whenever typing or the keyboard moves the cursor,
     // the page scrolls so the line you're on sits about a fifth of the way
-    // down the window. Clicking somewhere never scrolls.
+    // down the window. Clicking somewhere never scrolls. While you're
+    // selecting (dragging, or Shift with the arrows), the page only scrolls
+    // as much as it must to keep the end of the selection in view.
     handleScrollToSelection: (view) => {
+      if (selecting) return true; // the mouse is down: the browser scrolls at the edges itself
+      if (!view.state.selection.empty) return false;
       keepLineInPlace(view.coordsAtPos(view.state.selection.head));
       return true;
     },
