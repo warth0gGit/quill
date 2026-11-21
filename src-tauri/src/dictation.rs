@@ -30,7 +30,7 @@ pub const MODEL_MB: u32 = 148;
 
 const RATE: usize = 16_000;
 /// A pause this long ends a phrase.
-const PAUSE: Duration = Duration::from_millis(650);
+const PAUSE: Duration = Duration::from_millis(900);
 /// A phrase never runs longer than this before it is written out.
 const LONGEST: usize = RATE * 14;
 /// Sound kept from just before you start speaking, so first syllables aren't clipped.
@@ -444,10 +444,16 @@ impl Phrases {
         let n = self.window.len();
         self.window.clear();
 
-        // The floor falls fast to quiet moments and creeps up slowly.
-        self.floor = if r < self.floor { self.floor * 0.7 + r * 0.3 } else { self.floor * 0.998 + r * 0.002 };
-        self.floor = self.floor.clamp(0.0005, 0.05);
-        let loud = r > (self.floor * 3.0).max(0.008);
+        // The floor falls fast to quiet moments and only creeps up between
+        // phrases, so a long sentence never raises the bar on its own tail.
+        if r < self.floor {
+            self.floor = self.floor * 0.7 + r * 0.3;
+        } else if !self.speaking {
+            self.floor = self.floor * 0.995 + r * 0.005;
+        }
+        self.floor = self.floor.clamp(0.0003, 0.03);
+        // Sensitive on purpose: a soft word dropped is worse than a breath kept.
+        let loud = r > (self.floor * 2.2).max(0.0025);
 
         if !self.speaking {
             if loud {
@@ -509,7 +515,6 @@ fn write(app: &tauri::AppHandle, window: &str, phrases: Receiver<Vec<f32>>) -> R
     let ctx = load_model(app, window)?;
     let mut state = ctx.create_state().map_err(|_| "Quill couldn't start the speech model.".to_string())?;
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8) as i32;
-    let mut said = String::new();
 
     // Ends when the listener is done and every phrase has been written.
     for mut audio in phrases {
@@ -529,22 +534,11 @@ fn write(app: &tauri::AppHandle, window: &str, phrases: Receiver<Vec<f32>>) -> R
         params.set_print_progress(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
-        // The last words said help with spelling and carrying a sentence on.
-        let tail: String = {
-            let chars: Vec<char> = said.chars().collect();
-            chars[chars.len().saturating_sub(200)..].iter().collect()
-        };
-        if !tail.is_empty() {
-            params.set_initial_prompt(&tail);
-        }
         if state.full(params, &audio).is_err() {
             continue;
         }
         let mut text = String::new();
         for segment in state.as_iter() {
-            if segment.no_speech_probability() > 0.6 {
-                continue;
-            }
             if let Ok(t) = segment.to_str_lossy() {
                 text.push_str(&t);
             }
@@ -553,8 +547,6 @@ fn write(app: &tauri::AppHandle, window: &str, phrases: Receiver<Vec<f32>>) -> R
         if text.is_empty() {
             continue;
         }
-        said.push(' ');
-        said.push_str(&text);
         send(app, window, Event::Text { text });
     }
     Ok(())
@@ -616,7 +608,7 @@ mod tests {
         let mut p = Phrases::default();
         let mut sound = tone(0.5, 0.0005);
         sound.extend(tone(1.2, 0.2));
-        sound.extend(tone(0.9, 0.0005));
+        sound.extend(tone(1.2, 0.0005));
         sound.extend(tone(0.8, 0.2));
         sound.extend(tone(0.3, 0.0005));
         let mut got = Vec::new();
@@ -627,9 +619,27 @@ mod tests {
         }
         assert_eq!(got.len(), 1, "the first phrase ends at the long pause");
         let first = got[0] as f32 / RATE as f32;
-        assert!(first > 1.4 && first < 2.3, "first phrase was {first}s");
+        assert!(first > 1.6 && first < 2.6, "first phrase was {first}s");
         let last = p.finish().expect("the second phrase is still open");
         assert!(last.len() as f32 / RATE as f32 > 0.8);
+    }
+
+    #[test]
+    fn a_softer_end_of_sentence_is_kept() {
+        let mut p = Phrases::default();
+        let mut sound = tone(0.5, 0.001);
+        sound.extend(tone(1.0, 0.15)); // a strong start
+        sound.extend(tone(2.0, 0.012)); // trailing off, much quieter
+        sound.extend(tone(1.2, 0.001));
+        let mut got = Vec::new();
+        for s in sound {
+            if let Some(ph) = p.push(s) {
+                got.push(ph.len());
+            }
+        }
+        assert_eq!(got.len(), 1);
+        let secs = got[0] as f32 / RATE as f32;
+        assert!(secs > 3.0, "the quiet tail was cut off: {secs}s");
     }
 
     #[test]
