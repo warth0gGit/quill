@@ -11,6 +11,7 @@ import Strike from "@tiptap/extension-strike";
 import { Ink, TextSize, INK_ROLES, SIZE_ROLES, type InkRole, type SizeRole } from "./marks";
 import { Typing, typingStyle, setTypingStyle, styleToText, styleFromText, PLAIN, type TypingStyle } from "./typing";
 import { Pages, PageController, PAGE_H, GAP } from "./pages";
+import { Figure, setupPictures } from "./pictures";
 import {
   library,
   newFileName,
@@ -19,13 +20,15 @@ import {
   errorText,
   joinPath,
   parentOf,
+  nameOf,
+  imagesFolderOf,
   within,
   INBOX,
   type Spacing,
 } from "./storage";
 import { createLibrary } from "./library";
 import { runSplash } from "./splash";
-import { EditorState } from "@tiptap/pm/state";
+import { EditorState, NodeSelection } from "@tiptap/pm/state";
 import { bar, icons, MOD } from "./ui";
 import * as os from "./platform";
 
@@ -67,6 +70,7 @@ const editor = new Editor({
       link: false,
       underline: false,
       strike: false,
+      dropcursor: { color: "var(--cobalt)", width: 2 },
     }),
     // Faded strike-through: struck words stay readable but step back.
     Strike.extend({
@@ -78,6 +82,7 @@ const editor = new Editor({
     TextSize,
     Typing,
     Pages,
+    Figure,
   ],
   enableInputRules: false,
   enablePasteRules: false,
@@ -255,7 +260,7 @@ function selectionAttr(markName: string, attr: string): string | null | undefine
 
 function updateFloat() {
   const { state, view } = editor;
-  if (state.selection.empty || !view.hasFocus()) {
+  if (state.selection.empty || state.selection instanceof NodeSelection || !view.hasFocus()) {
     float.classList.remove("on");
     return;
   }
@@ -308,6 +313,8 @@ S.sep();
 S.tag("Lists");
 S.button(icons.bullets, `Bullet list (${MOD}+Shift+8)`, () => editor.chain().focus().toggleBulletList().run());
 S.button(icons.numbers, `Numbered list (${MOD}+Shift+7)`, () => editor.chain().focus().toggleOrderedList().run());
+S.sep();
+S.button(icons.picture, "Picture from a file (or paste one, or drop one on the page)", () => pictures.choose());
 
 let shownTyping: TypingStyle | null = null;
 function updateShelf() {
@@ -388,6 +395,7 @@ const menuItem = (label: string, kbd: string, run: () => void) => {
 };
 menuItem("New page", `${MOD} N`, () => void newPage());
 menuItem("Library", `${MOD} L`, () => void lib.open(true));
+menuItem("Insert picture…", "", () => pictures.choose());
 menuItem("Print…", `${MOD} P`, () => openPrint());
 menu.appendChild(document.createElement("hr"));
 menuItem("Show in File Explorer", "", () => void os.showInExplorer(savedPath ?? libraryRoot));
@@ -571,7 +579,13 @@ let saveTimer: number | undefined;
 let saved = true;
 
 function titleOf(): string {
-  const first = editor.state.doc.firstChild?.textContent.trim() ?? "";
+  // The first line with words in it (a document may open with a picture).
+  let first = "";
+  editor.state.doc.descendants((n) => {
+    if (first) return false;
+    if (n.isTextblock) first = n.textContent.trim();
+    return !n.isTextblock;
+  });
   return first.slice(0, 80) || "Untitled";
 }
 
@@ -626,8 +640,14 @@ function loadContent(html: string, style: TypingStyle) {
   if (pages.enabled) pages.recompute();
 }
 
+/** A page that never got saved may still have left pictures behind (pasted, then undone). */
+function forgetUnsaved() {
+  if (savedPath === null) void library.discardUnsavedImages(docPath).catch(() => undefined);
+}
+
 async function newPage() {
   await saveNow();
+  forgetUnsaved();
   startBlank();
   editor.commands.focus("start");
   void lib.refresh();
@@ -650,9 +670,11 @@ async function openDocument(path: string) {
   await saveNow();
   try {
     const { spacing: sp, next, body } = fromFile(await library.read(path));
+    forgetUnsaved();
     docPath = path;
     savedPath = await library.fullPath(path);
     loadContent(body, styleFromText(next, SIZE_ROLES, INK_ROLES));
+    pictures.settle();
     setSpacing(sp);
     page.scrollTop = 0;
     lib.close();
@@ -670,8 +692,13 @@ const lib = createLibrary({
   saveFirst: saveNow,
   moved(from, to) {
     if (!within(docPath, from)) return;
+    const before = docPath;
     docPath = to + docPath.slice(from.length);
     void library.fullPath(docPath).then((p) => savedPath !== null && (savedPath = p));
+    // Pictures are found relative to the document. If it had to be renamed
+    // (its name was taken), its pictures folder was renamed to match.
+    if (nameOf(before) !== nameOf(docPath)) pictures.renameFolder(imagesFolderOf(before), imagesFolderOf(docPath));
+    else pictures.refresh();
   },
   removed(path) {
     // The open document went to the Trash: carry on with a fresh page.
@@ -682,6 +709,17 @@ libBtn.setAttribute("aria-pressed", "false");
 new MutationObserver(() => libBtn.setAttribute("aria-pressed", String(lib.isOpen()))).observe(lib.el, {
   attributes: true,
   attributeFilter: ["class"],
+});
+
+/* --------------------------------------------------------------- pictures */
+
+const pictures = setupPictures(editor, page, {
+  docPath: () => docPath,
+  flash,
+  layout: () => {
+    if (pages.enabled) pages.schedule(60);
+    requestAnimationFrame(placeCaret);
+  },
 });
 
 let treeTimer: number | undefined;

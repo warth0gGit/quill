@@ -42,6 +42,7 @@ export const icons = {
   print: svg('<path d="M4.5 5.5V1.5h7v4"/><rect x="1.5" y="5.5" width="13" height="6" rx="1.2"/><path d="M4.5 9.5h7v5h-7z"/>', 'fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"'),
   bullets: svg('<circle cx="2.5" cy="4" r="1.2"/><circle cx="2.5" cy="8" r="1.2"/><circle cx="2.5" cy="12" r="1.2"/><path d="M6 3.4h8.5v1.2H6zM6 7.4h8.5v1.2H6zM6 11.4h8.5v1.2H6z"/>', 'fill="currentColor"'),
   numbers: svg('<path d="M1.6 2.6 2.8 2v4M1.6 6h2.4M1.5 9.6c0-.6.5-1 1.1-1s1.1.4 1.1 1c0 .9-2.2 1.6-2.2 2.9h2.3M6 3.4h8.5M6 8h8.5M6 12.6h8.5" stroke-linecap="round" stroke-linejoin="round"/>', 'fill="none" stroke="currentColor" stroke-width="1.2"'),
+  picture: svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><circle cx="5.5" cy="6.5" r="1.3"/><path d="M2 12l4-3.6 2.6 2.2L11 8.5l3.5 3" stroke-linejoin="round"/>'),
   min: svg('<path d="M3 8.5h10"/>', 'fill="none" stroke="currentColor" stroke-width="1.1"'),
   max: svg('<rect x="3.5" y="3.5" width="9" height="9"/>', 'fill="none" stroke="currentColor" stroke-width="1.1"'),
   restore: svg('<rect x="3.5" y="5.5" width="7" height="7"/><path d="M5.5 5.5v-2h7v7h-2"/>', 'fill="none" stroke="currentColor" stroke-width="1.1"'),
