@@ -1,7 +1,7 @@
 /**
  * Quick capture: the small window that Ctrl+Alt+Q brings up from anywhere.
  *
- * Type, press Enter, and it's saved as a new document in the Inbox. To file it
+ * Type, press Enter, and it's saved as a new document in Quick Capture. To file it
  * straight away, press Tab, start typing a folder name and press Enter.
  * Shift+Enter starts a new line. Esc (or clicking elsewhere) puts the window
  * away and keeps what you typed for next time.
@@ -17,7 +17,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { Placeholder } from "@tiptap/extensions";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { library, newFileName, toFile, joinPath, errorText, INBOX, type FolderEntry } from "./storage";
+import { library, newFileName, toFile, joinPath, errorText, QUICK, type FolderEntry } from "./storage";
 import { inTauri } from "./platform";
 
 const textEl = document.getElementById("cap-text")!;
@@ -129,8 +129,8 @@ textEl.addEventListener("mousedown", (e) => {
 
 /* ------------------------------------------------------------ where it goes */
 
-let folder = INBOX;
-let folders: string[] = [INBOX];
+let folder = QUICK;
+let folders: string[] = [QUICK];
 let shown: string[] = [];
 let picked = 0;
 
@@ -153,9 +153,10 @@ async function loadFolders() {
       }
     };
     walk(tree);
-    folders = out.length ? out : [INBOX];
+    // Quick Capture comes first, even before the first capture makes it.
+    folders = [QUICK, ...out.filter((f) => f !== QUICK)];
   } catch {
-    folders = [INBOX];
+    folders = [QUICK];
   }
 }
 
@@ -179,7 +180,7 @@ function drawFolders() {
           b.setAttribute("role", "option");
           b.setAttribute("aria-selected", String(i === picked));
           b.textContent = f.split("/").join(" / ");
-          if (f === INBOX) b.appendChild(Object.assign(document.createElement("span"), { textContent: "default" }));
+          if (f === QUICK) b.appendChild(Object.assign(document.createElement("span"), { textContent: "default" }));
           if (i === picked) b.appendChild(Object.assign(document.createElement("span"), { textContent: "Enter" }));
           b.addEventListener("mousedown", (e) => e.preventDefault());
           b.addEventListener("click", () => {
@@ -274,7 +275,7 @@ async function save() {
     editor.commands.clearContent(true);
     editor.commands.focus();
     draft.set("");
-    setFolder(INBOX);
+    setFolder(QUICK);
     setTimeout(async () => {
       await putAway();
       done.classList.remove("on");
@@ -327,5 +328,5 @@ if (win) {
   });
 }
 
-setFolder(INBOX);
+setFolder(QUICK);
 arrive();

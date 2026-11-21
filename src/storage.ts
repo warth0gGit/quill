@@ -18,6 +18,8 @@ export type Spacing = "tight" | "comfortable" | "airy";
 
 export const LINE_HEIGHT: Record<Spacing, number> = { tight: 1.45, comfortable: 1.75, airy: 2.05 };
 export const INBOX = "Inbox";
+/** Where quick captures go unless you pick another folder. Made on the first capture. */
+export const QUICK = "Quick Capture";
 
 export interface FolderEntry {
   kind: "folder";

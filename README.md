@@ -50,7 +50,7 @@ below the paragraph you're in, and a dropped one where the glowing line shows.
 ## Quick capture
 
 Press **Ctrl+Alt+Q** from anywhere and a small Quill window floats over
-whatever you're doing. Type and press **Enter**, and it's saved to the Inbox.
+whatever you're doing. Type and press **Enter**, and it's saved to the Quick Capture folder.
 To file it straight away, press **Tab**, start typing a folder name, and press
 **Enter**. **Shift+Enter** starts a new line. **Esc**, or clicking somewhere else,
 puts the window away and keeps what you typed for next time.
@@ -62,7 +62,7 @@ another app already uses Ctrl+Alt+Q, Quill tells you when it starts.
 ## Where your writing lives
 
 Everything is saved in `Documents\Quill`, in the folders you make in the library.
-New pages go to `Documents\Quill\Inbox`. Deleted things wait in a hidden `.trash`
+New pages go to `Documents\Quill\Inbox`, and quick captures to `Documents\Quill\Quick Capture`. Deleted things wait in a hidden `.trash`
 folder there for 30 days.
 Each document is one ordinary `.html` file that opens in any web browser, so your
 writing is never locked inside the app. A document's pictures are ordinary image

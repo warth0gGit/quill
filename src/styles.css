@@ -403,7 +403,22 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
 
 /* ------------------------------------------------------------ printing */
 
-@page { size: letter; margin: 1in; }
+/* Every margin box is claimed (empty unless a page number goes there), so the
+   browser's own header and footer (date, title, address, "1/3") don't print. */
+@page {
+  size: letter;
+  margin: 1in;
+  @top-left-corner { content: ""; }
+  @top-left { content: ""; }
+  @top-center { content: ""; }
+  @top-right { content: ""; }
+  @top-right-corner { content: ""; }
+  @bottom-left-corner { content: ""; }
+  @bottom-left { content: ""; }
+  @bottom-center { content: ""; }
+  @bottom-right { content: ""; }
+  @bottom-right-corner { content: ""; }
+}
 @media print {
   :root { color-scheme: light; --ink: #2b2d31; --midnight: #16275a; --cobalt: #1f4fd1; --azure: #1f73b8; --signal: #d2232a; }
   html, body { height: auto; overflow: visible; background: #fff !important; color: var(--ink); }
