@@ -7,6 +7,7 @@
 //! document and are shown in the window through the `qimg:` address scheme.
 
 mod desktop;
+mod dictation;
 mod library;
 
 use library::Entry;
@@ -150,6 +151,31 @@ fn serve_image(app: &tauri::AppHandle, uri_path: &str) -> tauri::http::Response<
     .expect("a valid response")
 }
 
+/* ------------------------------------------------------------ dictation */
+
+/// Whether the speech model is on this PC yet, and its download size in MB.
+#[tauri::command]
+fn dictation_ready(app: tauri::AppHandle) -> (bool, u32) {
+    (dictation::has_model(&app), dictation::MODEL_MB)
+}
+
+#[tauri::command]
+fn dictation_download(app: tauri::AppHandle, window: tauri::Window) {
+    dictation::download(app, window.label().to_string());
+}
+
+/// Starts listening for this window. Fails with "model-missing" until the
+/// speech model has been downloaded.
+#[tauri::command]
+fn dictation_start(app: tauri::AppHandle, window: tauri::Window) -> Result<(), String> {
+    dictation::start(app, window.label().to_string())
+}
+
+#[tauri::command]
+fn dictation_stop(app: tauri::AppHandle) {
+    dictation::stop(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -158,6 +184,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| desktop::show_main(app)))
         .plugin(desktop::shortcut_plugin())
         .plugin(tauri_plugin_opener::init())
+        .manage(dictation::Dictation::default())
         .register_asynchronous_uri_scheme_protocol("qimg", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let path = request.uri().path().to_string();
@@ -197,7 +224,11 @@ pub fn run() {
             discard_unsaved_images,
             show_main,
             open_capture,
-            capture_shortcut
+            capture_shortcut,
+            dictation_ready,
+            dictation_download,
+            dictation_start,
+            dictation_stop
         ])
         .run(tauri::generate_context!())
         .expect("error while running Quill");

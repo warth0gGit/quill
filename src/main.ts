@@ -13,6 +13,7 @@ import { Typing, typingStyle, setTypingStyle, styleToText, styleFromText, PLAIN,
 import { Pages, PageController, PAGE_H, GAP } from "./pages";
 import { Figure, setupPictures } from "./pictures";
 import { Autocorrect, autocorrectOn, setAutocorrect, autocorrectWords } from "./autocorrect";
+import { DictationGhost, setupDictation, MIC_ICON, DICTATE_KEYS } from "./dictation";
 import {
   library,
   newFileName,
@@ -90,6 +91,7 @@ const editor = new Editor({
     Pages,
     Figure,
     Autocorrect,
+    DictationGhost,
   ],
   enableInputRules: false,
   enablePasteRules: false,
@@ -381,6 +383,9 @@ const acBtn = T.button(`${AC_ICON}<span>Autocorrect</span>`, "Autocorrect while 
   flash(on ? (n ? `Autocorrect on · ${n.toLocaleString()} words` : "Autocorrect on · spelling list missing") : "Autocorrect off", 2200);
 }, tRight);
 acBtn.setAttribute("aria-pressed", String(autocorrectOn()));
+// Dictation: speak and Quill writes it, all on this PC.
+const dictBtn = T.button(`${MIC_ICON}<span>Dictate</span>`, `Dictate (${DICTATE_KEYS})`, () => void dictation.toggle(), tRight);
+dictBtn.setAttribute("aria-pressed", "false");
 T.sep(tRight);
 const winCtl = T.group("grp wc");
 tRight.appendChild(winCtl);
@@ -429,6 +434,7 @@ if (os.inTauri) {
     if (!claimed) setTimeout(() => flash(`Another app is using ${keys.split(" ").join("+")}. Quick capture is in the Menu.`, 6000), 2500);
   });
 }
+menuItem("Dictate", DICTATE_KEYS.split("+").join(" "), () => void dictation.toggle());
 menuItem("Print…", `${MOD} P`, () => openPrint());
 menu.appendChild(document.createElement("hr"));
 menuItem("Show in File Explorer", "", () => void os.showInExplorer(savedPath ?? libraryRoot));
@@ -763,6 +769,15 @@ function scheduleTreeRefresh() {
   clearTimeout(treeTimer);
   treeTimer = window.setTimeout(() => void lib.refresh(), 300);
 }
+
+/* --------------------------------------------------------------- dictation */
+
+const dictation = setupDictation({
+  editor,
+  caret,
+  note: flash,
+  changed: (on) => dictBtn.setAttribute("aria-pressed", String(on)),
+});
 
 /* --------------------------------------------------------------- keys */
 

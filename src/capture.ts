@@ -20,6 +20,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { library, newFileName, toFile, joinPath, errorText, QUICK, type FolderEntry } from "./storage";
 import { inTauri } from "./platform";
 import { Autocorrect, autocorrectNow } from "./autocorrect";
+import { DictationGhost, setupDictation } from "./dictation";
 
 const textEl = document.getElementById("cap-text")!;
 const foldersEl = document.getElementById("cap-folders")!;
@@ -70,6 +71,7 @@ const editor = new Editor({
     }),
     Placeholder.configure({ placeholder: "A thought, before it goes…" }),
     Autocorrect,
+    DictationGhost,
   ],
   content: draft.get(),
   enableInputRules: false,
@@ -83,6 +85,7 @@ const editor = new Editor({
       }
       if (e.key === "Enter" && !e.isComposing) {
         autocorrectNow(editor);
+        void dictation.stop();
         void save();
         return true;
       }
@@ -245,6 +248,7 @@ const win = inTauri ? getCurrentWindow() : null;
 
 async function putAway() {
   foldersEl.hidden = true;
+  void dictation.stop();
   if (win) await win.hide();
 }
 
@@ -291,6 +295,21 @@ async function save() {
     saving = false;
   }
 }
+
+/* ------------------------------------------------------------ dictation */
+
+const statusEl = document.getElementById("status")!;
+let noteTimer: number | undefined;
+const dictation = setupDictation({
+  editor,
+  caret,
+  note(text, ms = 1400) {
+    statusEl.textContent = text;
+    statusEl.classList.add("on");
+    clearTimeout(noteTimer);
+    noteTimer = window.setTimeout(() => statusEl.classList.remove("on"), ms);
+  },
+});
 
 /* ------------------------------------------------------------ coming and going */
 
