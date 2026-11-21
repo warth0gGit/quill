@@ -12,7 +12,7 @@ import { Ink, TextSize, INK_ROLES, SIZE_ROLES, type InkRole, type SizeRole } fro
 import { Typing, typingStyle, setTypingStyle, styleToText, styleFromText, PLAIN, type TypingStyle } from "./typing";
 import { Pages, PageController, PAGE_H, GAP } from "./pages";
 import { Figure, setupPictures } from "./pictures";
-import { Autocorrect, autocorrectOn, setAutocorrect } from "./autocorrect";
+import { Autocorrect, autocorrectOn, setAutocorrect, autocorrectWords } from "./autocorrect";
 import {
   library,
   newFileName,
@@ -367,7 +367,9 @@ const acBtn = T.button(`${AC_ICON}<span>Autocorrect</span>`, "Autocorrect while 
   const on = !autocorrectOn();
   setAutocorrect(on);
   acBtn.setAttribute("aria-pressed", String(on));
-  flash(on ? "Autocorrect on" : "Autocorrect off");
+  const n = autocorrectWords();
+  // The word count doubles as a check that spelling fixes are ready.
+  flash(on ? (n ? `Autocorrect on · ${n.toLocaleString()} words` : "Autocorrect on · spelling list missing") : "Autocorrect off", 2200);
 }, tRight);
 acBtn.setAttribute("aria-pressed", String(autocorrectOn()));
 T.sep(tRight);

@@ -1,0 +1,2 @@
+# Keep the autocorrect word list byte-for-byte the same on every machine.
+src/autocorrect-words.txt -text

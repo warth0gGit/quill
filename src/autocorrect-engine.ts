@@ -20,13 +20,18 @@ let rank: Map<string, number> | null = null;
 export function loadWords(text: string) {
   const m = new Map<string, number>();
   let i = 0;
-  for (const w of text.split("\n")) if (w) m.set(w, i++);
+  for (const line of text.split("\n")) {
+    // Windows checkouts can add "\r" to each line: strip it.
+    const w = line.trim();
+    if (w) m.set(w, i++);
+  }
   // Hand-picked typos are never "real words", even if people type them a lot.
   for (const k of FIXES.keys()) m.delete(k);
   rank = m;
 }
 
 export const wordsLoaded = () => rank !== null;
+export const wordCount = () => rank?.size ?? 0;
 
 /** Words the writer has told Quill to leave alone (by undoing a fix). */
 const leaveAlone = new Set<string>();
@@ -93,7 +98,7 @@ const LETTERS = "abcdefghijklmnopqrstuvwxyz";
 const COMMON = 30000;
 /** Known words rarer than this can still be slips of a very common word ("realy"). */
 const RARE = 60000;
-const VERY_COMMON = 1500;
+const VERY_COMMON = 12000;
 
 function guess(w: string): string | null {
   if (!rank || w.length < 3 || !/^[a-z]+$/.test(w)) return null;
@@ -125,11 +130,61 @@ function guess(w: string): string | null {
   if (!short)
     for (let i = 1; i <= w.length; i++)
       for (const ch of LETTERS) consider(w.slice(0, i) + ch + w.slice(i)); // a missed key
-  if (found.size === 0) return null;
+  // A rare real word only gives way to one far more common (20 times or more).
+  if (known) for (const [c, r] of found) if (own! < r * 20) found.delete(c);
+  if (found.size === 0) return known ? null : twoSlips(w);
   const best = [...found].sort((x, y) => x[1] - y[1]);
   // One clear winner: at least three times as common as the runner-up.
   if (best.length > 1 && best[1][1] < best[0][1] * 3 + 50) return null;
   return best[0][0];
+}
+
+/** Common words grouped by first letter, for the two-slip search. */
+let byFirst: Map<string, string[]> | null = null;
+const TWO_SLIPS_TOP = 15000;
+
+/** Edit distance where a swapped pair counts as one slip; gives up past `max`. */
+function slips(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev2: number[] = [];
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, prev2[j - 2] + 1);
+      cur.push(v);
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1;
+    prev2 = prev;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Two slips in a longer word ("definatly", "acommodate"): only towards common words. */
+function twoSlips(w: string): string | null {
+  if (w.length < 6 || !rank) return null;
+  if (!byFirst) {
+    byFirst = new Map();
+    for (const [word, r] of rank) {
+      if (r >= TWO_SLIPS_TOP || word.length < 5) continue;
+      const list = byFirst.get(word[0]) ?? [];
+      list.push(word);
+      byFirst.set(word[0], list);
+    }
+  }
+  const found: [string, number][] = [];
+  for (const c of byFirst.get(w[0]) ?? []) {
+    if (slips(w, c, 2) <= 2) found.push([c, rank.get(c)!]);
+  }
+  if (found.length === 0) return null;
+  found.sort((x, y) => x[1] - y[1]);
+  if (found.length > 1 && found[1][1] < found[0][1] * 5 + 100) return null;
+  return found[0][0];
 }
 
 /* ------------------------------------------------------------ the whole decision */

@@ -18,7 +18,9 @@
 import { Extension, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import { correct, loadWords, setLeaveAlone, wordAtEnd, wordsLoaded } from "./autocorrect-engine";
+import { correct, loadWords, setLeaveAlone, wordAtEnd, wordsLoaded, wordCount } from "./autocorrect-engine";
+// The word list ships inside the app (no download, no separate file to find).
+import WORDS from "./autocorrect-words.txt?raw";
 
 /* ------------------------------------------------------------ the setting */
 
@@ -67,10 +69,20 @@ window.addEventListener("storage", (e) => {
 });
 setLeaveAlone(readLeaveAlone());
 
-/** Load the common-words list in the background (about half a megabyte). */
+/** Read the word list (about 0.1s), in a quiet moment after start-up. */
 function loadDictionary() {
   if (wordsLoaded()) return;
-  void import("./autocorrect-words.txt?raw").then((m) => loadWords(m.default));
+  try {
+    loadWords(WORDS);
+  } catch (e) {
+    console.error("Autocorrect: couldn't read the word list", e);
+  }
+}
+
+/** For the top shelf's note: how many words autocorrect knows. */
+export function autocorrectWords(): number {
+  loadDictionary();
+  return wordCount();
 }
 
 /* ------------------------------------------------------------ the plugin */
@@ -101,6 +113,7 @@ function fixBefore(view: EditorView, pos: number, ender: string): boolean {
   const text = $pos.parent.textBetween(0, $pos.parentOffset, undefined, "\n");
   const found = wordAtEnd(text);
   if (!found) return false;
+  loadDictionary(); // normally done already; if not, now
   const fix = correct(text.slice(0, found.start), found.word, ender);
   if (!fix) return false;
 
