@@ -48,6 +48,8 @@ export const TUNE = {
   maxSlip: 2.6,
   /** how much the word before counts */
   contextWeight: 1.4,
+  /** how strong a word pair must be to change a real word after it */
+  afterStrength: 1000000,
   /** hitting the key next to the right one */
   nearKey: 0.8,
 };
@@ -115,6 +117,20 @@ function missingCost(c: string, j: number): number {
   if (c[j - 1] === ch || c[j + 1] === ch) return 0.7; // one of a double: ocassion
   if (VOWELS.has(ch)) return 1.1; // a skipped vowel: probly
   return 1.3;
+}
+
+/** British and American spellings of the same word are both right: never swap them. */
+export function otherSpelling(w: string, c: string): boolean {
+  const us = (x: string) =>
+    x
+      .replace(/is(e|ed|es|ing|ation|ations|er|ers)$/, "iz$1")
+      .replace(/ys(e|ed|es|ing)$/, "yz$1")
+      .replace(/our(s|ed|ing|ful|ite|ites|able)?$/, "or$1")
+      .replace(/tre(s)?$/, "ter$1")
+      .replace(/ll(ed|ing|er|ers)$/, "l$1")
+      .replace(/ogue(s)?$/, "og$1")
+      .replace(/ence(s)?$/, "ense$1");
+  return us(w) === us(c);
 }
 
 /* ------------------------------------------------------------ the word lists */
@@ -235,8 +251,8 @@ export function guessWord(w: string, prev: string | null, lex: Lexicon, next: st
   if (own !== undefined && own < RARE) return null; // a real word: leave it
   const scored: [string, number][] = [];
   for (const c of candidates(w, lex)) {
-    // Plurals and endings are the writer's choice, not a typo.
-    if (c + "s" === w || w + "s" === c) continue;
+    // Plurals, endings and British/American spellings are the writer's choice.
+    if (c + "s" === w || w + "s" === c || otherSpelling(w, c)) continue;
     const slip = slipCost(w, c, TUNE.maxSlip);
     if (slip > TUNE.maxSlip) continue;
     // Short words: one easy slip, or two towards a very common word ("wnht" -> "want").
@@ -274,7 +290,7 @@ export function rethinkWord(w: string, next: string, lex: Lexicon): string | nul
   let bestPair = 0;
   for (const c of candidates(w, lex)) {
     const r = lex.rank.get(c)!;
-    if (r > 3000 || c + "s" === w || w + "s" === c) continue;
+    if (r > 3000 || c + "s" === w || w + "s" === c || otherSpelling(w, c)) continue;
     if (slipCost(w, c, 1.2) > 1.1) continue;
     // How strongly the next word goes with this word in particular ("going to"),
     // not just how common the pair is ("length and").
@@ -286,4 +302,31 @@ export function rethinkWord(w: string, next: string, lex: Lexicon): string | nul
   }
   // Only when the pair is a strong one ("going to", "would have").
   return bestPair >= 60000 ? best : null;
+}
+
+/**
+ * A real word that the word before gives away as a slip: "good jon" -> "good job".
+ * Measured by how much more the earlier word goes with the candidate than chance
+ * would suggest, so everyday pairs ("the plan") don't count for much.
+ */
+export function rethinkAfter(prev: string, w: string, lex: Lexicon): string | null {
+  if (!lex.pairs || w.length < 3 || !/^[a-z]+$/.test(w)) return null;
+  const own = lex.rank.get(w);
+  const pr = lex.rank.get(prev);
+  if (own === undefined || own < 3000 || pr === undefined) return null;
+  if (pr < 60) return null; // "the", "of", "to" go with everything: no clue there
+  if (lex.pairs.get(prev + " " + w)) return null; // normal as typed
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const c of candidates(w, lex)) {
+    const r = lex.rank.get(c)!;
+    if (r > 3000 || c + "s" === w || w + "s" === c || otherSpelling(w, c)) continue;
+    if (slipCost(w, c, 1.2) > 1.0) continue; // one easy slip only
+    const k = (lex.pairs.get(prev + " " + c) ?? 0) * (r + 50) * (pr + 50);
+    if (k > bestScore) {
+      best = c;
+      bestScore = k;
+    }
+  }
+  return bestScore >= TUNE.afterStrength ? best : null;
 }
