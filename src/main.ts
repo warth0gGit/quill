@@ -8,7 +8,8 @@ import "./styles.css";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Strike from "@tiptap/extension-strike";
-import { Ink, TextSize, INK_ROLES, type InkRole, type SizeRole } from "./marks";
+import { Ink, TextSize, INK_ROLES, SIZE_ROLES, type InkRole, type SizeRole } from "./marks";
+import { Typing, typingStyle, setTypingStyle, styleToText, styleFromText, PLAIN, type TypingStyle } from "./typing";
 import { Pages, PageController, PAGE_H, GAP } from "./pages";
 import {
   library,
@@ -20,7 +21,6 @@ import {
   parentOf,
   within,
   INBOX,
-  type DocSize,
   type Spacing,
 } from "./storage";
 import { createLibrary } from "./library";
@@ -76,6 +76,7 @@ const editor = new Editor({
     }),
     Ink,
     TextSize,
+    Typing,
     Pages,
   ],
   enableInputRules: false,
@@ -83,11 +84,26 @@ const editor = new Editor({
   autofocus: "end",
   editorProps: {
     attributes: { class: "ed", spellcheck: "true", "aria-label": "Page" },
-    // Keep the line you're writing well clear of the window's edges.
-    scrollThreshold: { top: 80, bottom: 160, left: 0, right: 0 },
-    scrollMargin: { top: 80, bottom: 160, left: 0, right: 0 },
+    // Typewriter scrolling: whenever typing or the keyboard moves the cursor,
+    // the page scrolls so the line you're on sits about a fifth of the way
+    // down the window. Clicking somewhere never scrolls.
+    handleScrollToSelection: (view) => {
+      keepLineInPlace(view.coordsAtPos(view.state.selection.head));
+      return true;
+    },
   },
 });
+
+/* ------------------------------------------------------------ typewriter scrolling */
+
+const WRITING_LINE = 0.2; // the line you're writing sits this far down the window
+
+function keepLineInPlace(c: { top: number; bottom: number }) {
+  const box = page.getBoundingClientRect();
+  const target = box.top + page.clientHeight * WRITING_LINE;
+  const delta = c.top - target;
+  if (Math.abs(delta) > 2) page.scrollTop += delta;
+}
 
 /* ------------------------------------------------------------ glow cursor */
 // Cobalt, 2.5px wide, 75% of the line, a 5px glow at 30%, breathing every
@@ -143,7 +159,7 @@ editor.view.dom.addEventListener("keydown", (e) => {
 
 const pages = new PageController(
   () => editor.view,
-  (count) => {
+  (count, shift) => {
     sheetLayer.replaceChildren(
       ...Array.from({ length: pages.enabled ? count : 0 }, (_, i) => {
         const s = document.createElement("div");
@@ -153,13 +169,16 @@ const pages = new PageController(
       }),
     );
     (editor.view.dom as HTMLElement).style.minHeight = pages.enabled ? `${count * PAGE_H + (count - 1) * GAP}px` : "";
+    // When a new sheet pushes the line you're writing down, follow it, so
+    // the writing line stays where it was.
+    if (shift && editor.view.hasFocus()) page.scrollTop += shift;
     requestAnimationFrame(placeCaret);
   },
 );
 
 function setPages(on: boolean) {
   document.body.classList.toggle("pages", on);
-  pref.set("pages", on ? "on" : "off");
+  pref.set("pageView", on ? "on" : "off");
   pagesBtn.setAttribute("aria-pressed", String(on));
   pages.setEnabled(on);
   placeCaret();
@@ -188,23 +207,51 @@ marked.push([F.button("<b>B</b>", `Bold (${MOD}+B)`, () => editor.chain().focus(
 marked.push([F.button("<i>I</i>", `Italic (${MOD}+I)`, () => editor.chain().focus().toggleItalic().run()), "italic"]);
 marked.push([F.button("<s>S</s>", `Strike-through (${MOD}+Shift+X)`, () => editor.chain().focus().toggleStrike().run()), "strike"]);
 F.sep();
-const SIZE_BTNS: [string, SizeRole | null, number][] = [
-  ["Small", "small", 11],
-  ["Body", null, 14],
-  ["Large", "large", 17],
-  ["Title", "title", 21],
+// The same four sizes and five colours appear in Float and on the Shelf, and
+// both store them the same way. Float applies them to the highlighted words;
+// the Shelf sets them for the words you type next.
+const SIZES: [string, SizeRole | null][] = [
+  ["Small", "small"],
+  ["Body", null],
+  ["Large", "large"],
+  ["Title", "title"],
 ];
-for (const [name, role, px] of SIZE_BTNS) {
-  F.button(`<span style="font-size:${px}px;line-height:1">A</span>`, name, () => {
+const sizeGlyph = (role: SizeRole | null) => `<span class="a-size" data-a="${role ?? "body"}">A</span>`;
+const inkGlyph = (role: InkRole) => `<span class="sw" data-ink-swatch="${role}"></span>`;
+const floatSizes = SIZES.map(([name, role]) =>
+  F.button(sizeGlyph(role), name, () => {
     const c = editor.chain().focus();
     (role ? c.setTextSize(role) : c.unsetTextSize()).run();
-  });
-}
+    updateFloat();
+  }),
+);
 F.sep();
-for (const role of INK_ROLES) {
-  F.button(`<span class="sw" data-ink-swatch="${role}"></span>`, INK_LABEL[role], () => editor.chain().focus().setInk(role).run());
+const floatInks = INK_ROLES.map((role) =>
+  F.button(inkGlyph(role), INK_LABEL[role], () => {
+    editor.chain().focus().setInk(role).run();
+    updateFloat();
+  }),
+);
+F.button('<span class="clear">×</span>', "Clear formatting", () => {
+  editor.chain().focus().unsetAllMarks().run();
+  updateFloat();
+});
+
+/** The one size (or colour) the whole selection has, or undefined if it's mixed. */
+function selectionAttr(markName: string, attr: string): string | null | undefined {
+  const { state } = editor;
+  const { from, to } = state.selection;
+  const type = state.schema.marks[markName];
+  let found: string | null | undefined;
+  let mixed = false;
+  state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isText) return;
+    const v = (node.marks.find((m) => m.type === type)?.attrs[attr] as string | undefined) ?? null;
+    if (found === undefined) found = v;
+    else if (found !== v) mixed = true;
+  });
+  return mixed ? undefined : found;
 }
-F.button('<span class="clear">×</span>', "Clear formatting", () => editor.chain().focus().unsetAllMarks().run());
 
 function updateFloat() {
   const { state, view } = editor;
@@ -214,6 +261,13 @@ function updateFloat() {
   }
   hideShelves();
   for (const [b, name] of marked) b.setAttribute("aria-pressed", String(editor.isActive(name)));
+  // Show what the highlighted words already are.
+  const size = selectionAttr("textSize", "size");
+  floatSizes.forEach((b, i) => b.setAttribute("aria-pressed", String(size !== undefined && SIZES[i][1] === size)));
+  const ink = selectionAttr("ink", "role");
+  floatInks.forEach((b, i) =>
+    b.setAttribute("aria-pressed", String(ink !== undefined && (INK_ROLES[i] === ink || (ink === null && i === 0)))),
+  );
   const a = view.coordsAtPos(state.selection.from);
   const z = view.coordsAtPos(state.selection.to);
   const w = float.offsetWidth;
@@ -230,33 +284,43 @@ editor.on("blur", () => float.classList.remove("on"));
 
 /* ------------------------------------------------------------ the Shelf (bottom) */
 
-const S = bar("shelf", "Document");
+// The Shelf sets the style for what you type next. It never restyles words
+// already written: for that, select them (Ctrl+A for everything) and use Float.
+const S = bar("shelf", "Next words");
 const shelf = S.el;
-S.tag("Document");
-const DOC_SIZES: [string, DocSize][] = [
-  ["Small", "small"],
-  ["Body", "body"],
-  ["Large", "large"],
-];
-const docSizeBtns = DOC_SIZES.map(([name, size]) =>
-  S.button(name, `Whole document: ${name}`, () => {
-    setDocSize(size);
-    scheduleSave();
-  }),
+S.tag("Next words");
+const changeTyping = (patch: Partial<TypingStyle>) => {
+  const next = { ...typingStyle(editor.state), ...patch };
+  editor.view.dispatch(setTypingStyle(editor.state, next));
+  editor.commands.focus();
+};
+const shelfSizes = SIZES.map(([name, role]) => S.button(sizeGlyph(role), `${name} for what you type next`, () => changeTyping({ size: role })));
+S.sep();
+const shelfBold = S.button("<b>B</b>", `Bold for what you type next (${MOD}+B)`, () => changeTyping({ bold: !typingStyle(editor.state).bold }));
+const shelfItalic = S.button("<i>I</i>", `Italic for what you type next (${MOD}+I)`, () =>
+  changeTyping({ italic: !typingStyle(editor.state).italic }),
+);
+S.sep();
+const shelfInks = INK_ROLES.map((role) =>
+  S.button(inkGlyph(role), `${INK_LABEL[role]} for what you type next`, () => changeTyping({ ink: role === "graphite" ? null : role })),
 );
 S.sep();
 S.tag("Lists");
 S.button(icons.bullets, `Bullet list (${MOD}+Shift+8)`, () => editor.chain().focus().toggleBulletList().run());
 S.button(icons.numbers, `Numbered list (${MOD}+Shift+7)`, () => editor.chain().focus().toggleOrderedList().run());
-S.sep();
-S.tag("Next words");
-S.button("<b>B</b>", "Bold for what you type next", () => editor.chain().focus().toggleBold().run());
-S.button("<i>I</i>", "Italic for what you type next", () => editor.chain().focus().toggleItalic().run());
-for (const role of INK_ROLES) {
-  S.button(`<span class="sw" data-ink-swatch="${role}"></span>`, `${INK_LABEL[role]} for what you type next`, () =>
-    editor.chain().focus().setInk(role).run(),
-  );
+
+let shownTyping: TypingStyle | null = null;
+function updateShelf() {
+  const t = typingStyle(editor.state);
+  if (shownTyping === t) return;
+  if (shownTyping && styleToText(shownTyping) !== styleToText(t) && !editor.isEmpty) scheduleSave(); // kept with the document
+  shownTyping = t;
+  shelfSizes.forEach((b, i) => b.setAttribute("aria-pressed", String(SIZES[i][1] === t.size)));
+  shelfBold.setAttribute("aria-pressed", String(t.bold));
+  shelfItalic.setAttribute("aria-pressed", String(t.italic));
+  shelfInks.forEach((b, i) => b.setAttribute("aria-pressed", String((t.ink ?? "graphite") === INK_ROLES[i])));
 }
+editor.on("transaction", updateShelf);
 
 /* ------------------------------------------------------------ the top shelf */
 
@@ -432,14 +496,6 @@ addEventListener("mousedown", () => (altAlone = false));
 
 /* ------------------------------------------------------------ document settings */
 
-let docSize: DocSize = "body";
-function setDocSize(size: DocSize) {
-  docSize = size;
-  document.body.dataset.size = size;
-  docSizeBtns.forEach((b, i) => b.setAttribute("aria-pressed", String(DOC_SIZES[i][1] === size)));
-  afterLayoutChange();
-}
-
 let spacing: Spacing = "comfortable";
 function setSpacing(sp: Spacing) {
   spacing = sp;
@@ -449,7 +505,7 @@ function setSpacing(sp: Spacing) {
 }
 
 function afterLayoutChange() {
-  // Size and spacing changes animate for 250ms; re-measure pages after that.
+  // Spacing changes animate for 250ms; re-measure pages after that.
   setTimeout(() => {
     if (pages.enabled) pages.recompute();
     placeCaret();
@@ -534,7 +590,7 @@ async function saveNow() {
   }
   try {
     const path = docPath;
-    const full = await library.save(path, toFile(titleOf(), docSize, spacing, editor.getHTML()));
+    const full = await library.save(path, toFile(titleOf(), spacing, styleToText(typingStyle(editor.state)), editor.getHTML()));
     if (path === docPath) savedPath = full; // unless another document was opened meanwhile
     saved = true;
     flash("Saved");
@@ -559,10 +615,13 @@ os.onClose(saveNow);
 /* --------------------------------------------------------------- new page, open */
 
 /** Replace what's on the page without leaving the old text in Undo. */
-function loadContent(html: string) {
+function loadContent(html: string, style: TypingStyle) {
   editor.commands.setContent(html, { emitUpdate: false });
   const { state } = editor;
   editor.view.updateState(EditorState.create({ doc: state.doc, plugins: state.plugins, schema: state.schema }));
+  editor.view.dispatch(setTypingStyle(editor.state, style));
+  shownTyping = null;
+  updateShelf();
   saved = true;
   if (pages.enabled) pages.recompute();
 }
@@ -578,8 +637,7 @@ function startBlank() {
   clearTimeout(saveTimer);
   docPath = joinPath(INBOX, newFileName());
   savedPath = null;
-  loadContent("");
-  setDocSize("body");
+  loadContent("", PLAIN);
   setSpacing("comfortable");
 }
 
@@ -591,11 +649,10 @@ async function openDocument(path: string) {
   }
   await saveNow();
   try {
-    const { size, spacing: sp, body } = fromFile(await library.read(path));
+    const { spacing: sp, next, body } = fromFile(await library.read(path));
     docPath = path;
     savedPath = await library.fullPath(path);
-    loadContent(body);
-    setDocSize(size);
+    loadContent(body, styleFromText(next, SIZE_ROLES, INK_ROLES));
     setSpacing(sp);
     page.scrollTop = 0;
     lib.close();
@@ -675,9 +732,9 @@ page.addEventListener("mousedown", (e) => {
 
 /* --------------------------------------------------------------- start */
 
-setDocSize("body");
 setSpacing("comfortable");
-setPages(pref.get("pages") === "on");
+// Pages are on unless you've turned them off.
+setPages(pref.get("pageView") !== "off");
 void (async () => {
   try {
     libraryRoot = await library.rootPath();

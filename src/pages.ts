@@ -119,7 +119,8 @@ export class PageController {
 
   constructor(
     private view: () => EditorView,
-    private onLayout: (pages: number) => void,
+    /** `shift`: how far the cursor moved down the page, so the view can follow it. */
+    private onLayout: (pages: number, shift: number) => void,
   ) {}
 
   setEnabled(on: boolean) {
@@ -138,13 +139,16 @@ export class PageController {
     const view = this.view();
     if (this.running || view.composing) return this.schedule(200);
     this.running = true;
+    const head = view.state.selection.head;
+    const before = view.coordsAtPos(head).top;
+    const shift = () => view.coordsAtPos(Math.min(head, view.state.doc.content.size)).top - before;
     try {
       // 1. Lay the text out without spacers, then measure it. Both dispatches
       //    happen in the same task, so the browser never paints the bare layout.
       view.dispatch(view.state.tr.setMeta(key, DecorationSet.empty).setMeta("addToHistory", false));
       if (!this.enabled) {
         this.pageCount = 1;
-        this.onLayout(1);
+        this.onLayout(1, shift());
         return;
       }
       const root = view.dom as HTMLElement;
@@ -179,7 +183,7 @@ export class PageController {
         view.state.tr.setMeta(key, DecorationSet.create(view.state.doc, decos)).setMeta("addToHistory", false),
       );
       this.pageCount = page + 1;
-      this.onLayout(this.pageCount);
+      this.onLayout(this.pageCount, shift());
     } finally {
       this.running = false;
     }

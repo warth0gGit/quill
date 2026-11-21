@@ -46,8 +46,6 @@ body {
   -webkit-font-smoothing: antialiased;
   transition: background-color 0.25s ease;
 }
-body[data-size="small"] { font-size: 16.5px; }
-body[data-size="large"] { font-size: 22px; }
 
 /* ------------------------------------------------------------ start-up splash */
 #q-splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: var(--paper); color: var(--ink); }
@@ -56,7 +54,7 @@ body[data-size="large"] { font-size: 22px; }
 
 /* ------------------------------------------------------------ the page */
 
-.page { height: 100%; overflow-y: auto; padding: 12vh 24px 30vh; cursor: text; }
+.page { height: 100%; overflow-y: auto; padding: 20vh 24px 80vh; cursor: text; }
 .sheets { position: relative; max-width: 62ch; margin: 0 auto; }
 .sheet-layer { display: none; }
 #editor { position: relative; z-index: 1; }
@@ -92,7 +90,7 @@ body[data-spacing="airy"] .ed { line-height: 2.05; }
 
 /* Pages: discrete Letter sheets on a desk, 816 x 1056 with 1 inch margins. */
 body.pages { background: var(--desk); }
-body.pages .page { padding: 48px 24px 40vh; overflow-x: auto; }
+body.pages .page { padding: max(32px, calc(20vh - 96px)) 24px 80vh; overflow-x: auto; } /* first line at the writing line */
 body.pages .sheets { width: 816px; max-width: none; }
 body.pages .sheet-layer { display: block; position: absolute; inset: 0; pointer-events: none; }
 .sheet {
@@ -138,6 +136,14 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
 .tb .lbl { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); padding: 0 4px 0 8px; white-space: nowrap; }
 .tb .sw { width: 14px; height: 14px; border-radius: 50%; background: currentColor; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 15%, transparent); }
 .tb .clear { color: var(--dim); }
+/* The four sizes, drawn the same way in Float and on the Shelf. */
+.tb .a-size { line-height: 1; }
+.tb .a-size[data-a="small"] { font-size: 11px; }
+.tb .a-size[data-a="body"] { font-size: 14px; }
+.tb .a-size[data-a="large"] { font-size: 17px; }
+.tb .a-size[data-a="title"] { font-size: 21px; }
+/* A chosen colour shows as a ring around its dot. */
+.tb button[aria-pressed="true"] .sw { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px currentColor; }
 .tb .grp { display: flex; align-items: center; gap: 2px; }
 
 .shelf {

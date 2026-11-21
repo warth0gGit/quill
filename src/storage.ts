@@ -9,10 +9,8 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 
-export type DocSize = "small" | "body" | "large";
 export type Spacing = "tight" | "comfortable" | "airy";
 
-export const FONT_PX: Record<DocSize, number> = { small: 16.5, body: 19, large: 22 };
 export const LINE_HEIGHT: Record<Spacing, number> = { tight: 1.45, comfortable: 1.75, airy: 2.05 };
 export const INBOX = "Inbox";
 
@@ -51,17 +49,18 @@ const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** The stored file: readable in any browser, and loadable back into Quill. */
-export function toFile(title: string, size: DocSize, spacing: Spacing, bodyHtml: string): string {
+/** `next` is the Shelf's style for what you type next, e.g. "size=large;bold". */
+export function toFile(title: string, spacing: Spacing, next: string, bodyHtml: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="generator" content="Quill">
-<meta name="quill-size" content="${size}">
 <meta name="quill-spacing" content="${spacing}">
+<meta name="quill-next" content="${esc(next)}">
 <title>${esc(title)}</title>
 <style>
-body{max-width:62ch;margin:56px auto;padding:0 20px;font-family:Spectral,Georgia,serif;line-height:${LINE_HEIGHT[spacing]};color:#2B2D31;background:#FBFBF9;font-size:${FONT_PX[size]}px}
+body{max-width:62ch;margin:56px auto;padding:0 20px;font-family:Spectral,Georgia,serif;line-height:${LINE_HEIGHT[spacing]};color:#2B2D31;background:#FBFBF9;font-size:19px}
 p{margin:0 0 .85em}s{opacity:.45}ul,ol{margin:0 0 .85em;padding-left:1.6em}li p{margin:0}ul{list-style:none}ul>li{position:relative}ul>li::before{content:"\\2022";position:absolute;left:-1.05em;color:#1F4FD1;font-weight:600}ol>li::marker{color:#1F4FD1}
 [data-size=small]{font-size:.84em}[data-size=large]{font-size:1.32em}[data-size=title]{font-size:1.85em;line-height:1.25}
 [data-ink=midnight]{color:#16275A}[data-ink=cobalt]{color:#1F4FD1}[data-ink=azure]{color:#1F73B8}[data-ink=signal]{color:#D2232A}
@@ -78,13 +77,12 @@ ${bodyHtml}
 }
 
 /** Read a stored file back: its document settings and the body to edit. */
-export function fromFile(html: string): { size: DocSize; spacing: Spacing; body: string } {
+export function fromFile(html: string): { spacing: Spacing; next: string; body: string } {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const meta = (name: string) => doc.querySelector(`meta[name="${name}"]`)?.getAttribute("content") ?? "";
-  const size = (["small", "body", "large"] as const).find((s) => s === meta("quill-size")) ?? "body";
   const spacing = (["tight", "comfortable", "airy"] as const).find((s) => s === meta("quill-spacing")) ?? "comfortable";
   const body = (doc.querySelector("article") ?? doc.body).innerHTML.trim();
-  return { size, spacing, body };
+  return { spacing, next: meta("quill-next"), body };
 }
 
 /* ------------------------------------------------------------ browser stand-in */
