@@ -43,6 +43,9 @@ below the paragraph you're in, and a dropped one where the glowing line shows.
 - Click a picture for the image bar: wrap left, centre, wrap right or wide; sizes
   S, M, L and Full; a caption; replace; remove.
 - Drag a picture to move it. Drop it on the left or right to wrap text around it.
+- A wrapped picture stays exactly where you put it on the page. Text you add
+  above it flows around it instead of pushing it down. Centred and wide pictures
+  sit between paragraphs and move with the text.
 - Drag a corner to resize. Sizes snap between the four widths, or past Full into Wide.
 - With a picture clicked: **←** **→** change the layout, **↑** **↓** the size,
   **Delete** removes it, and **Enter** or **Esc** goes back to writing.

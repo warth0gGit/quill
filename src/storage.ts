@@ -74,7 +74,7 @@ p{margin:0 0 .85em}s{opacity:.45}ul,ol{margin:0 0 .85em;padding-left:1.6em}li p{
 [data-size=small]{font-size:.84em}[data-size=large]{font-size:1.32em}[data-size=title]{font-size:1.85em;line-height:1.25}
 figure{margin:.4em auto 1.1em;width:75%}figure img{display:block;width:100%;height:auto;border-radius:6px}figcaption{font-size:.8em;line-height:1.45;opacity:.7;font-style:italic;text-align:center;padding-top:8px}
 figure[data-size=s]{width:33.3%}figure[data-size=m]{width:50%}figure[data-size=full]{width:100%}
-figure[data-align=left]{float:left;margin:.35em 1.4em .5em 0;clear:both}figure[data-align=right]{float:right;margin:.35em 0 .5em 1.4em;clear:both}
+figure[data-align=left]{float:left;margin:.35em 1.4em .5em 0;clear:both}figure[data-align=right]{float:right;margin:.35em 0 .5em 1.4em;clear:both}figure[data-y][data-align=left]{clear:left}figure[data-y][data-align=right]{clear:right}
 figure[data-align=left][data-size=s],figure[data-align=right][data-size=s]{width:30%}figure[data-align=left][data-size=m],figure[data-align=right][data-size=m]{width:42%}figure[data-align=left][data-size=l],figure[data-align=right][data-size=l]{width:55%}
 figure[data-align=left] figcaption,figure[data-align=right] figcaption{text-align:left}figure[data-align=wide]{width:calc(100% + 128px);margin-left:-64px;margin-right:-64px}
 [data-ink=midnight]{color:#16275A}[data-ink=cobalt]{color:#1F4FD1}[data-ink=azure]{color:#1F73B8}[data-ink=signal]{color:#D2232A}

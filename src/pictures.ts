@@ -6,6 +6,12 @@
  * "2026-11-21-091500 images/lake.png"), its layout (wrap left, centre, wrap
  * right or wide), its size (S, M, L or Full) and an optional caption.
  *
+ * Wrapped pictures (left or right) are pinned where you put them: they keep
+ * their place on the page while you write, and the text flows around them,
+ * including text you add above. In the document they sit at the very start,
+ * in order down the page, each with the height it's pinned at (`y`). Centred
+ * and wide pictures sit between paragraphs and move with the text.
+ *
  * Click a picture and the image bar appears above it. Drag it to move it to
  * another gap between paragraphs (and to the left, middle or right). Drag a
  * corner to resize it; sizes snap to the four widths. With a picture clicked,
@@ -13,11 +19,12 @@
  * Esc goes back to writing. Typing never replaces a picture.
  */
 import { Node, type Editor } from "@tiptap/core";
-import { Plugin, PluginKey, NodeSelection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { Plugin, PluginKey, NodeSelection, TextSelection, Selection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import type { EditorView, NodeView } from "@tiptap/pm/view";
 import { library, joinPath, parentOf, errorText } from "./storage";
 import { bar } from "./ui";
+import { PAGE_H, GAP, MARGIN, CONTENT_H } from "./pages";
 
 export type Align = "left" | "center" | "right" | "wide";
 export type PicSize = "s" | "m" | "l" | "full";
@@ -30,6 +37,8 @@ const SIZE_LABEL: Record<PicSize, string> = { s: "S", m: "M", l: "L", full: "Ful
 const WIDTH: Record<PicSize, number> = { s: 1 / 3, m: 0.5, l: 0.75, full: 1 };
 const WRAP_WIDTH: Partial<Record<PicSize, number>> = { s: 0.3, m: 0.42, l: 0.55 };
 const isWrap = (a: Align) => a === "left" || a === "right";
+/** A wrapped picture pinned at a height on the page. */
+const isPinned = (n: PMNode | null | undefined) => !!n && n.type.name === "figure" && isWrap(n.attrs.align) && n.attrs.y != null;
 
 /** A picture copied from another document, waiting to be copied into this one's folder. */
 const BORROWED = "lib:";
@@ -56,10 +65,12 @@ interface Env {
   /** The open document's library path. */
   docPath: () => string;
   flash: (message: string) => void;
+  /** Whether the page is shown as sheets of paper. */
+  pages: () => boolean;
   /** A picture changed size or loaded: re-measure pages, move the bar. */
   layout: () => void;
 }
-let env: Env = { docPath: () => "", flash: () => undefined, layout: () => undefined };
+let env: Env = { docPath: () => "", flash: () => undefined, pages: () => false, layout: () => undefined };
 
 const urlFor = (file: string) =>
   file.startsWith(BORROWED) ? library.imageUrl(file.slice(BORROWED.length)) : library.imageUrl(joinPath(parentOf(env.docPath()), file));
@@ -93,6 +104,15 @@ export const Figure = Node.create({
         renderHTML: () => ({}),
       },
       alt: { default: "", parseHTML: (el) => el.querySelector("img")?.getAttribute("alt") ?? "", renderHTML: () => ({}) },
+      /** Where a wrapped picture is pinned: its top, in px below the top of the page. */
+      y: {
+        default: null,
+        parseHTML: (el) => {
+          const y = parseFloat(el.dataset.y ?? "");
+          return Number.isFinite(y) ? Math.max(0, y) : null;
+        },
+        renderHTML: () => ({}),
+      },
     };
   },
   parseHTML() {
@@ -101,9 +121,14 @@ export const Figure = Node.create({
   renderHTML({ node }) {
     const a = node.attrs;
     const img = ["img", { src: srcFromFile(a.file), alt: a.alt || "" }];
-    return a.caption
-      ? ["figure", { "data-align": a.align, "data-size": a.size }, img, ["figcaption", {}, a.caption]]
-      : ["figure", { "data-align": a.align, "data-size": a.size }, img];
+    const attrs: Record<string, string> = { "data-align": a.align, "data-size": a.size };
+    if (isPinned(node)) {
+      attrs["data-y"] = String(Math.round(a.y));
+      // So the saved file, opened in a browser, shows it where it was printed.
+      const top = printTops.get(node);
+      if (top != null) attrs.style = `margin-top:${top}px;shape-outside:inset(${top}px 0 0 0) margin-box`;
+    }
+    return a.caption ? ["figure", attrs, img, ["figcaption", {}, a.caption]] : ["figure", attrs, img];
   },
   renderText({ node }) {
     return node.attrs.caption ? `[${node.attrs.caption}]` : "";
@@ -155,11 +180,16 @@ class FigureView implements NodeView {
       if (this.img.naturalWidth && this.img.naturalHeight) {
         this.dom.style.setProperty("--r", String(this.img.naturalWidth / this.img.naturalHeight));
       }
+      placePinned(this.view, true);
       env.layout();
     });
     this.img.addEventListener("error", () => {
       this.dom.classList.add("missing");
+      placePinned(this.view, true);
       env.layout();
+    });
+    this.dom.addEventListener("transitionend", (e) => {
+      if (e.target === this.dom && isPinned(this.node)) placePinned(this.view, true);
     });
     this.frame.addEventListener("pointerdown", (e) => pointerDown(this, e));
     this.frame.addEventListener("pointermove", (e) => pointerMove(this, e));
@@ -186,6 +216,7 @@ class FigureView implements NodeView {
     });
     this.caption.addEventListener("blur", () => {
       if (this.node.attrs.caption === "") this.render(); // keeps showing "Add a caption" while it's on
+      placePinned(this.view, true);
       env.layout();
     });
 
@@ -197,6 +228,7 @@ class FigureView implements NodeView {
     const a = this.node.attrs;
     this.dom.dataset.align = a.align;
     this.dom.dataset.size = a.size;
+    this.dom.classList.toggle("pinned", isPinned(this.node));
     if (force || a.file !== this.shownFile || !this.shownUrl) {
       this.shownFile = a.file;
       this.shownUrl = urlFor(a.file);
@@ -279,12 +311,194 @@ function selectFigure(view: EditorView, pos: number, tr: Transaction = view.stat
 function leave(view: EditorView, pos: number, tr: Transaction = view.state.tr) {
   const node = tr.doc.nodeAt(pos);
   if (!node) return;
+  if (isPinned(node)) {
+    // A pinned picture: the cursor goes into the text beside it.
+    const dom = view.nodeDOM(pos) as HTMLElement | null;
+    let sel: Selection | null = null;
+    if (dom) {
+      const r = dom.getBoundingClientRect();
+      const col = column(view);
+      const x = node.attrs.align === "left" ? Math.min(r.right + 30, col.left + col.width - 2) : Math.max(r.left - 30, col.left + 2);
+      const hit = view.posAtCoords({ left: x, top: r.top + 10 });
+      if (hit) {
+        const near = Selection.near(tr.doc.resolve(hit.pos));
+        if (near instanceof TextSelection) sel = near;
+      }
+    }
+    tr.setSelection(sel ?? Selection.atEnd(tr.doc));
+    view.dispatch(tr);
+    view.focus();
+    return;
+  }
   const after = pos + node.nodeSize;
   const next = tr.doc.nodeAt(after);
   if (!next || !next.isTextblock) tr.insert(after, view.state.schema.nodes.paragraph.create());
   tr.setSelection(TextSelection.create(tr.doc, after + 1)).scrollIntoView();
   view.dispatch(tr);
   view.focus();
+}
+
+/* ------------------------------------------------------------ pinned pictures */
+
+/*
+ * A pinned picture's `y` is measured on "paper": the writing as one long
+ * strip, with the sheets' margins and the gaps between them taken out. That is
+ * exactly where it prints, and it stays put whether or not pages are shown.
+ */
+const STEP = PAGE_H + GAP;
+/** From paper to the page on screen (px below the top of the editor). */
+function screenY(paper: number): number {
+  if (!env.pages()) return paper;
+  const s = Math.floor(Math.max(0, paper) / CONTENT_H);
+  return s * STEP + MARGIN + (paper - s * CONTENT_H);
+}
+/** From the page on screen to paper. */
+function paperY(screen: number): number {
+  if (!env.pages()) return Math.max(0, screen);
+  const s = Math.max(0, Math.floor(screen / STEP));
+  const within = Math.min(CONTENT_H, Math.max(0, screen - s * STEP - MARGIN));
+  return s * CONTENT_H + within;
+}
+/** On sheets, a picture never hangs over a sheet's edge: it moves up to fit, or onto the next sheet if it's in the bottom margin. */
+function onSheet(y: number, h: number): number {
+  if (!env.pages()) return Math.max(0, y);
+  let s = Math.max(0, Math.floor(y / STEP));
+  if (y > s * STEP + MARGIN + CONTENT_H) s += 1;
+  const lo = s * STEP + MARGIN;
+  return Math.max(lo, Math.min(y, lo + CONTENT_H - h));
+}
+
+const edTop = (view: EditorView) => (view.dom as HTMLElement).getBoundingClientRect().top;
+
+/** A picture's top on paper, as it's shown now. */
+function paperTopOf(view: EditorView, pos: number): number | null {
+  const dom = view.nodeDOM(pos) as HTMLElement | null;
+  return dom?.getBoundingClientRect ? Math.round(paperY(dom.getBoundingClientRect().top - edTop(view))) : null;
+}
+
+/** Where the saved file (and the printout) puts each pinned picture: its top margin. */
+const printTops = new WeakMap<PMNode, number>();
+let pinnedKey = "";
+
+/**
+ * Put each pinned picture at its height. The pictures all sit at the start of
+ * the document, so a top margin takes each one down to its place, and the text
+ * steps around the picture only, not around the margin above it.
+ */
+function placePinned(view: EditorView, force = false) {
+  const pinned: { fv: FigureView; y: number }[] = [];
+  view.state.doc.forEach((n, pos) => {
+    if (!isPinned(n)) return;
+    const dom = view.nodeDOM(pos);
+    const fv = [...views].find((v) => v.dom === dom);
+    if (fv) pinned.push({ fv, y: n.attrs.y });
+  });
+  const key = [env.pages(), (view.dom as HTMLElement).clientWidth, ...pinned.map(({ fv, y }) => {
+    const a = fv.node.attrs;
+    return `${y},${a.align},${a.size},${a.caption ?? "-"},${a.file}`;
+  })].join("|");
+  if (!force && key === pinnedKey) return;
+  pinnedKey = key;
+  if (!pinned.length) return;
+  const top0 = edTop(view);
+  const printed = { left: 0, right: 0 };
+  for (const { fv, y } of pinned) {
+    const el = fv.dom;
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    const natural = r.top - top0 - (parseFloat(cs.marginTop) || 0);
+    const at = onSheet(screenY(y), r.height);
+    el.style.setProperty("--mt", `${Math.max(0, at - natural)}px`);
+    // Printed, the same picture sits on paper, with nothing above it but the pictures before it.
+    const side = fv.node.attrs.align as "left" | "right";
+    const py = paperY(at);
+    const pm = Math.round(Math.max(0, py - printed[side]));
+    el.style.setProperty("--mtp", `${pm}px`);
+    printTops.set(fv.node, pm);
+    printed[side] = Math.max(printed[side], py) + r.height + (parseFloat(cs.marginBottom) || 0);
+  }
+  env.layout();
+}
+
+/** Where a pinned picture at paper height `y` goes among the others at the start of the document. */
+function pinnedSlot(doc: PMNode, y: number, skip: number | null): number {
+  let pos = 0;
+  for (let i = 0; i < doc.childCount; i++) {
+    const c = doc.child(i);
+    if (pos !== skip) {
+      if (!isPinned(c) || c.attrs.y > y) return pos;
+    }
+    pos += c.nodeSize;
+  }
+  return pos;
+}
+
+/** Where a picture that stops wrapping goes: before the first paragraph at or below its height, never above the title. */
+function flowSlot(view: EditorView, paper: number): number {
+  const y = screenY(paper);
+  const top0 = edTop(view);
+  let seenTitle = false;
+  let slot = view.state.doc.content.size;
+  let found = false;
+  view.state.doc.forEach((n, pos) => {
+    if (found || isPinned(n)) return;
+    if (!seenTitle) return void (seenTitle = true);
+    const dom = view.nodeDOM(pos) as HTMLElement | null;
+    const t = dom?.getBoundingClientRect ? dom.getBoundingClientRect().top - top0 : Infinity;
+    if (t >= y - 4) {
+      slot = pos;
+      found = true;
+    }
+  });
+  return slot;
+}
+
+/**
+ * Give the picture at `pos` new attributes in `tr` (which must not have
+ * changed the document yet), moving it if it starts or stops wrapping. A
+ * picture that starts wrapping is pinned where it is (or at paper height `y`);
+ * one that stops goes back between the paragraphs at its height. Returns
+ * where the picture is now.
+ */
+function relayoutFigure(view: EditorView, tr: Transaction, pos: number, next: PMNode["attrs"], y?: number): number {
+  const node = tr.doc.nodeAt(pos)!;
+  const was = isPinned(node);
+  if (isWrap(next.align)) {
+    const at = Math.max(0, Math.round(y ?? (was ? node.attrs.y : paperTopOf(view, pos) ?? 0)));
+    const attrs = { ...next, y: at };
+    const slot = pinnedSlot(tr.doc, at, was ? pos : null);
+    if (was && (slot === pos || slot === pos + node.nodeSize)) {
+      tr.setNodeMarkup(pos, undefined, attrs);
+      return pos;
+    }
+    tr.delete(pos, pos + node.nodeSize);
+    const to = tr.mapping.map(slot);
+    tr.insert(to, node.type.create(attrs));
+    return to;
+  }
+  const attrs = { ...next, y: null };
+  if (!was) {
+    tr.setNodeMarkup(pos, undefined, attrs);
+    return pos;
+  }
+  const slot = flowSlot(view, y ?? node.attrs.y);
+  tr.delete(pos, pos + node.nodeSize);
+  const to = tr.mapping.map(slot);
+  tr.insert(to, node.type.create(attrs));
+  return to;
+}
+
+/** Pictures wrapped before pinning existed (or pasted in) are pinned where they are now. */
+function pinLoose(view: EditorView) {
+  const loose: { pos: number; node: PMNode; y: number }[] = [];
+  view.state.doc.forEach((n, pos) => {
+    if (n.type.name === "figure" && isWrap(n.attrs.align) && n.attrs.y == null) loose.push({ pos, node: n, y: paperTopOf(view, pos) ?? 0 });
+  });
+  if (!loose.length) return;
+  const tr = view.state.tr.setMeta("addToHistory", false);
+  for (const l of [...loose].reverse()) tr.delete(l.pos, l.pos + l.node.nodeSize);
+  for (const l of loose) tr.insert(pinnedSlot(tr.doc, l.y, null), l.node.type.create({ ...l.node.attrs, y: l.y }));
+  view.dispatch(tr);
 }
 
 /* ------------------------------------------------------------ layout and size */
@@ -312,10 +526,11 @@ function stepped(attrs: PMNode["attrs"], dir: 1 | -1) {
 function changeSelected(view: EditorView, make: (attrs: PMNode["attrs"]) => PMNode["attrs"]) {
   const fig = selectedFigure(view.state);
   if (!fig) return;
-  const tr = view.state.tr.setNodeMarkup(fig.pos, undefined, make(fig.node.attrs));
-  tr.setSelection(NodeSelection.create(tr.doc, fig.pos));
+  const tr = view.state.tr;
+  const pos = relayoutFigure(view, tr, fig.pos, make(fig.node.attrs));
+  tr.setSelection(NodeSelection.create(tr.doc, pos));
   view.dispatch(tr);
-  active = fig.pos;
+  active = pos;
   view.focus();
 }
 
@@ -325,6 +540,8 @@ interface Target {
   pos: number; // a gap between top-level blocks
   zone: Align;
   lineY: number;
+  /** For wrapping: the paper height the picture's top is pinned at. */
+  y: number;
 }
 
 const dropEl = document.createElement("div");
@@ -343,10 +560,12 @@ function column(view: EditorView) {
 
 /**
  * The gap between paragraphs nearest to (x, y), and whether the picture should
- * wrap left, sit in the centre or wrap right. Never above the first line, which
- * is the title. Shows the glowing line where it will land.
+ * wrap left, sit in the centre or wrap right. A wrapped picture isn't put in a
+ * gap: it's pinned with its top at the pointer (less `grabDy`, how far down the
+ * picture you're holding it). Never above the first line, which is the title.
+ * Shows the glowing line where it will land.
  */
-function targetAt(view: EditorView, x: number, y: number, exclude: number | null, keepWide: boolean): Target {
+function targetAt(view: EditorView, x: number, y: number, exclude: number | null, keepWide: boolean, grabDy = 0): Target {
   const col = column(view);
   const rel = (x - col.left) / col.width;
   let zone: Align = rel < 0.3 ? "left" : rel > 0.7 ? "right" : "center";
@@ -354,7 +573,7 @@ function targetAt(view: EditorView, x: number, y: number, exclude: number | null
 
   const blocks: { pos: number; top: number; bottom: number }[] = [];
   view.state.doc.forEach((node, pos) => {
-    if (pos === exclude) return;
+    if (pos === exclude || isPinned(node)) return;
     const dom = view.nodeDOM(pos) as HTMLElement | null;
     if (!dom?.getBoundingClientRect) return;
     const r = dom.getBoundingClientRect();
@@ -376,6 +595,14 @@ function targetAt(view: EditorView, x: number, y: number, exclude: number | null
       break;
     }
   }
+  let pinY = 0;
+  if (isWrap(zone)) {
+    const top0 = edTop(view);
+    const below = blocks.length ? blocks[0].bottom + 4 : col.top; // under the title
+    lineY = Math.max(below, y - grabDy);
+    pinY = Math.round(paperY(lineY - top0));
+    lineY = screenY(pinY) + top0;
+  }
   const span: Record<Align, [number, number]> = { left: [0, 0.42], center: [0.2, 0.8], right: [0.58, 1], wide: [-0.08, 1.08] };
   const [a, b] = span[zone];
   dropEl.style.transform = `translate(${col.left}px, ${lineY}px)`;
@@ -387,7 +614,7 @@ function targetAt(view: EditorView, x: number, y: number, exclude: number | null
   label.style.left = `${((a + b) / 2) * col.width}px`;
   label.textContent = ALIGN_NAMES[zone];
   dropEl.classList.add("on");
-  return { pos, zone, lineY };
+  return { pos, zone, lineY, y: pinY };
 }
 const hideDrop = () => dropEl.classList.remove("on");
 
@@ -426,11 +653,24 @@ async function insertFiles(editor: Editor, files: File[], at?: Target) {
   const { view, state } = editor;
   const type = state.schema.nodes.figure;
   const zone = at?.zone ?? "center";
-  const attrs = isWrap(zone) ? { align: zone, size: "m" } : { align: "center", size: "l" };
-  const nodes = saved.map((file) => type.create({ ...attrs, file }));
-  const pos = Math.min(at?.pos ?? defaultSpot(state), state.doc.content.size);
   const back = state.selection.empty ? state.selection.head : null;
-  const tr = state.tr.insert(pos, Fragment.from(nodes));
+  const tr = state.tr;
+  let pos: number;
+  if (at && isWrap(zone)) {
+    // Dropped to one side: pinned where it was dropped (several stack down the page).
+    pos = -1;
+    for (const file of saved) {
+      const node = type.create({ align: zone, size: "m", file, y: at.y });
+      const slot = pinnedSlot(tr.doc, at.y + 0.5, null);
+      tr.insert(slot, node);
+      if (pos < 0) pos = slot;
+    }
+  } else {
+    const attrs = isWrap(zone) ? { align: zone, size: "m" } : { align: "center", size: "l" };
+    const nodes = saved.map((file) => type.create({ ...attrs, file }));
+    pos = Math.min(at?.pos ?? defaultSpot(state), state.doc.content.size);
+    tr.insert(pos, Fragment.from(nodes));
+  }
   selectFigure(view, pos, tr);
   arrival = back != null && !at ? { figure: pos, back: tr.mapping.map(back) } : null;
   // A soft glow as it arrives, then make sure it's in view.
@@ -461,8 +701,8 @@ function pick(onFiles: (files: File[]) => void, multiple = true) {
 /* ------------------------------------------------------------ dragging and resizing */
 
 type Drag =
-  | { kind: "maybe"; fv: FigureView; x0: number; y0: number }
-  | { kind: "move"; fv: FigureView; ghost: HTMLImageElement; target: Target | null }
+  | { kind: "maybe"; fv: FigureView; x0: number; y0: number; grabDy: number }
+  | { kind: "move"; fv: FigureView; ghost: HTMLImageElement; target: Target | null; grabDy: number }
   | { kind: "resize"; fv: FigureView; side: 1 | -1; x0: number; w0: number; align: Align; size: PicSize };
 let drag: Drag | null = null;
 
@@ -488,7 +728,7 @@ function pointerDown(fv: FigureView, e: PointerEvent) {
     fv.dom.classList.add("resizing");
     showSizeTag(fv, drag.align, drag.size);
   } else {
-    drag = { kind: "maybe", fv, x0: e.clientX, y0: e.clientY };
+    drag = { kind: "maybe", fv, x0: e.clientX, y0: e.clientY, grabDy: e.clientY - fv.dom.getBoundingClientRect().top };
   }
 }
 
@@ -503,11 +743,11 @@ function pointerMove(fv: FigureView, e: PointerEvent) {
     document.body.appendChild(ghost);
     fv.dom.classList.add("lifting");
     imageBar.el.classList.remove("on");
-    drag = { kind: "move", fv, ghost, target: null };
+    drag = { kind: "move", fv, ghost, target: null, grabDy: drag.grabDy };
   }
   if (drag.kind === "move") {
     drag.ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -60%) rotate(-2deg)`;
-    drag.target = targetAt(fv.view, e.clientX, e.clientY, fv.getPos() ?? null, fv.node.attrs.align === "wide");
+    drag.target = targetAt(fv.view, e.clientX, e.clientY, fv.getPos() ?? null, fv.node.attrs.align === "wide", drag.grabDy);
     autoScroll(fv.view, e.clientY);
   } else if (drag.kind === "resize") {
     const col = column(fv.view).width;
@@ -547,16 +787,19 @@ function pointerUp(fv: FigureView, _e: PointerEvent, cancelled = false) {
     hideDrop();
     if (pos == null || cancelled || !d.target) return void updateBar(view);
     const node = view.state.doc.nodeAt(pos)!;
-    const attrs = d.target.zone === "wide" || d.target.zone !== node.attrs.align ? withAlign(node.attrs, d.target.zone) : node.attrs;
+    const zone = d.target.zone;
+    const attrs = zone === "wide" || zone !== node.attrs.align ? withAlign(node.attrs, zone) : node.attrs;
     const tr = view.state.tr;
     let at = d.target.pos;
-    if (at !== pos && at !== pos + node.nodeSize) {
+    if (isWrap(zone)) {
+      at = relayoutFigure(view, tr, pos, attrs, d.target.y);
+    } else if (at !== pos && at !== pos + node.nodeSize) {
       tr.delete(pos, pos + node.nodeSize);
       at = tr.mapping.map(at);
-      tr.insert(at, node.type.create(attrs));
+      tr.insert(at, node.type.create({ ...attrs, y: null }));
     } else {
       at = pos;
-      tr.setNodeMarkup(pos, undefined, attrs);
+      tr.setNodeMarkup(pos, undefined, { ...attrs, y: null });
     }
     selectFigure(view, at, tr);
   } else if (d.kind === "resize") {
@@ -725,6 +968,7 @@ function picturePlugin(editor: Editor) {
           const fig = selectedFigure(v.state);
           if (!fig || fig.pos !== active) active = null;
           if (!fig || fig.pos !== arrival?.figure) arrival = null;
+          placePinned(v);
           updateBar(v);
         },
         destroy() {
@@ -735,6 +979,16 @@ function picturePlugin(editor: Editor) {
     },
     props: {
       handleKeyDown(view, e) {
+        // Pinned pictures sit before the title in the document: the cursor
+        // never goes back into them from the title, and Backspace doesn't join them.
+        if (!e.isComposing && (e.key === "Backspace" || e.key === "ArrowLeft" || e.key === "ArrowUp")) {
+          const { selection: sel, doc } = view.state;
+          const $from = sel.$from;
+          if (sel.empty && $from.depth >= 1 && $from.index(0) > 0 && isPinned(doc.child($from.index(0) - 1))) {
+            const atStart = $from.depth === 1 && $from.parentOffset === 0;
+            if (e.key === "ArrowUp" ? view.endOfTextblock("up") : atStart) return true;
+          }
+        }
         const fig = selectedFigure(view.state);
         if (!fig || e.isComposing) return false;
         const mod = e.ctrlKey || e.metaKey || e.altKey;
@@ -782,6 +1036,21 @@ function picturePlugin(editor: Editor) {
         return true;
       },
       transformPasted(slice) {
+        // A pasted picture comes in between paragraphs, centred: a pinned
+        // height from elsewhere would mean nothing here.
+        let unpinned = false;
+        const unpin = (frag: Fragment): Fragment => {
+          const out: PMNode[] = [];
+          frag.forEach((n) => {
+            if (n.type.name === "figure" && (isWrap(n.attrs.align) || n.attrs.y != null)) {
+              unpinned = true;
+              out.push(n.type.create({ ...n.attrs, align: "center", size: n.attrs.size === "s" ? "s" : "m", y: null }));
+            } else out.push(n.copy(unpin(n.content)));
+          });
+          return Fragment.from(out);
+        };
+        const flat = unpin(slice.content);
+        if (unpinned) slice = new Slice(flat, slice.openStart, slice.openEnd);
         if (!copiedFrom || copiedFrom === env.docPath()) return slice;
         const from = parentOf(copiedFrom);
         let changed = false;
@@ -813,8 +1082,10 @@ export interface Pictures {
   refresh(): void;
   /** The document was renamed: its pictures folder was renamed to match. */
   renameFolder(from: string, to: string): void;
-  /** After opening a document: finish copying any borrowed pictures. */
+  /** After opening a document: finish copying any borrowed pictures, and pin wrapped pictures from older files. */
   settle(): void;
+  /** The page changed shape (pages on or off): put pinned pictures back at their heights. */
+  relayout(): void;
 }
 
 export function setupPictures(editor: Editor, page: HTMLElement, deps: Env): Pictures {
@@ -860,7 +1131,10 @@ export function setupPictures(editor: Editor, page: HTMLElement, deps: Env): Pic
   }
 
   page.addEventListener("scroll", () => !drag && placeBar(view()), { passive: true });
-  addEventListener("resize", () => placeBar(view()));
+  addEventListener("resize", () => {
+    placePinned(view());
+    placeBar(view());
+  });
   editor.on("focus", () => updateBar(view()));
   editor.on("blur", () => setTimeout(() => updateBar(view()), 0));
 
@@ -877,6 +1151,10 @@ export function setupPictures(editor: Editor, page: HTMLElement, deps: Env): Pic
       if (tr.docChanged) editor.view.dispatch(tr);
       views.forEach((v) => v.render(true));
     },
-    settle: () => void settleBorrowed(editor),
+    settle: () => {
+      void settleBorrowed(editor);
+      requestAnimationFrame(() => pinLoose(view()));
+    },
+    relayout: () => placePinned(view(), true),
   };
 }
