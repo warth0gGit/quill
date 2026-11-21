@@ -8,7 +8,7 @@ pub const CAPTURE: &str = "capture";
 pub const MAIN: &str = "main";
 /// Not Ctrl+Alt+Space: the Claude app and others already use that.
 pub const SHORTCUT: &str = "ctrl+alt+q";
-/// The shortcut as the File menu shows it.
+/// The shortcut as the Menu shows it.
 pub const SHORTCUT_LABEL: &str = "Ctrl Alt Q";
 const CAPTURE_W: f64 = 500.0;
 const CAPTURE_H: f64 = 280.0;
@@ -82,7 +82,7 @@ pub fn shortcut_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 }
 
 /// Claim the shortcut. If another app already has it, Quill still starts and
-/// says so; quick capture is then only in the File menu.
+/// says so; quick capture is then only in the Menu.
 pub fn register_shortcut(app: &AppHandle) -> bool {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     match app.global_shortcut().register(SHORTCUT) {

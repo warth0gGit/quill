@@ -35,6 +35,11 @@ import { bar, icons, MOD } from "./ui";
 import * as os from "./platform";
 
 const page = document.getElementById("page")!;
+/** The mouse button is down on the page (a click, or a drag to select). */
+let selecting = false;
+addEventListener("pointerdown", (e) => (selecting = e.button === 0), true);
+addEventListener("pointerup", () => (selecting = false), true);
+addEventListener("pointercancel", () => (selecting = false), true);
 const sheetLayer = document.getElementById("sheet-layer")!;
 const caret = document.getElementById("caret")!;
 const status = document.getElementById("status")!;
@@ -95,8 +100,12 @@ const editor = new Editor({
     attributes: { class: "ed", spellcheck: "true", "aria-label": "Page" },
     // Typewriter scrolling: whenever typing or the keyboard moves the cursor,
     // the page scrolls so the line you're on sits about a fifth of the way
-    // down the window. Clicking somewhere never scrolls.
+    // down the window. Clicking somewhere never scrolls. While you're
+    // selecting (dragging, or Shift with the arrows), the page only scrolls
+    // as much as it must to keep the end of the selection in view.
     handleScrollToSelection: (view) => {
+      if (selecting) return true; // the mouse is down: the browser scrolls at the edges itself
+      if (!view.state.selection.empty) return false;
       keepLineInPlace(view.coordsAtPos(view.state.selection.head));
       return true;
     },
@@ -341,7 +350,7 @@ const top = T.el;
 top.dataset.tauriDragRegion = "";
 const tLeft = T.group();
 const libBtn = T.button(`${icons.library}<span>Library</span>`, `Library (${MOD}+L)`, () => lib.toggle(), tLeft);
-const fileBtn = T.button(`${icons.file}<span>File</span>`, "File", () => toggleMenu(), tLeft);
+const fileBtn = T.button(`${icons.menu}<span>Menu</span>`, "Menu", () => toggleMenu(), tLeft);
 const crumb = document.createElement("div");
 crumb.className = "crumb";
 crumb.dataset.tauriDragRegion = "";
@@ -422,7 +431,7 @@ if (os.inTauri) {
   void os.captureShortcut().then(({ keys, claimed }) => {
     kbd.textContent = claimed ? keys : "";
     // Another app got there first: say so once, softly, after the splash.
-    if (!claimed) setTimeout(() => flash(`Another app is using ${keys.split(" ").join("+")}. Quick capture is in the File menu.`, 6000), 2500);
+    if (!claimed) setTimeout(() => flash(`Another app is using ${keys.split(" ").join("+")}. Quick capture is in the Menu.`, 6000), 2500);
   });
 }
 menuItem("Dictate", DICTATE_KEYS.split("+").join(" "), () => void dictation.toggle());
