@@ -18,9 +18,10 @@
 import { Extension, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import { correct, loadWords, setLeaveAlone, wordAtEnd, wordsLoaded, wordCount } from "./autocorrect-engine";
+import { correct, loadWords, loadPairs, setLeaveAlone, wordAtEnd, wordsLoaded, wordCount } from "./autocorrect-engine";
 // The word list ships inside the app (no download, no separate file to find).
 import WORDS from "./autocorrect-words.txt?raw";
+import PAIRS from "./autocorrect-pairs.txt?raw";
 
 /* ------------------------------------------------------------ the setting */
 
@@ -74,6 +75,8 @@ function loadDictionary() {
   if (wordsLoaded()) return;
   try {
     loadWords(WORDS);
+    // Word pairs (for context) in a second quiet moment, so start-up stays smooth.
+    setTimeout(() => loadPairs(PAIRS), 300);
   } catch (e) {
     console.error("Autocorrect: couldn't read the word list", e);
   }

@@ -13,6 +13,7 @@
  * Then the first word of a sentence gets its capital letter.
  */
 import { FIXES, ABBREVIATIONS } from "./autocorrect-list";
+import { guessWord, buildIndex, type Lexicon } from "./autocorrect-guess";
 
 /** Common words in order, most used first (filled in once the list loads). */
 let rank: Map<string, number> | null = null;
@@ -22,13 +23,35 @@ export function loadWords(text: string) {
   let i = 0;
   for (const line of text.split("\n")) {
     // Windows checkouts can add "\r" to each line: strip it.
-    const w = line.trim();
-    if (w) m.set(w, i++);
+    let w = line.trim();
+    if (!w) continue;
+    // "~" marks a word people type but that isn't in the dictionary (often a typo).
+    if (w[0] === "~") {
+      w = w.slice(1);
+      notReal.add(w);
+    }
+    m.set(w, i++);
   }
   // Hand-picked typos are never "real words", even if people type them a lot.
   for (const k of FIXES.keys()) m.delete(k);
   rank = m;
+  lex = { rank: m, notReal, byFirst: buildIndex(m), pairs: lex?.pairs ?? pendingPairs };
 }
+
+let lex: Lexicon | null = null;
+const notReal = new Set<string>();
+
+/** Word pairs, one per line: "prev next count" (count in thousands). */
+export function loadPairs(text: string) {
+  const p = new Map<string, number>();
+  for (const line of text.split("\n")) {
+    const parts = line.trim().split(" ");
+    if (parts.length === 3) p.set(parts[0] + " " + parts[1], Number(parts[2]));
+  }
+  if (lex) lex.pairs = p;
+  else pendingPairs = p;
+}
+let pendingPairs: Map<string, number> | null = null;
 
 export const wordsLoaded = () => rank !== null;
 export const wordCount = () => rank?.size ?? 0;
@@ -79,114 +102,6 @@ function applyCasing(fixed: string, c: Casing): string {
 
 const capitalise = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
 
-/* ------------------------------------------------------------ the careful guess */
-
-const ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
-const NEAR = new Map<string, string>();
-for (let r = 0; r < ROWS.length; r++)
-  for (let c = 0; c < ROWS[r].length; c++) {
-    let n = "";
-    for (const [dr, dc] of [[0, -1], [0, 1], [-1, 0], [-1, 1], [1, 0], [1, -1]]) {
-      const ch = ROWS[r + dr]?.[c + dc];
-      if (ch) n += ch;
-    }
-    NEAR.set(ROWS[r][c], n);
-  }
-const LETTERS = "abcdefghijklmnopqrstuvwxyz";
-
-/** Only guess towards words in the most common this-many. */
-const COMMON = 30000;
-/** Known words rarer than this can still be slips of a very common word ("realy"). */
-const RARE = 60000;
-const VERY_COMMON = 12000;
-
-function guess(w: string): string | null {
-  if (!rank || w.length < 3 || !/^[a-z]+$/.test(w)) return null;
-  const own = rank.get(w);
-  if (own !== undefined && own < RARE) return null; // a real word
-  const known = own !== undefined;
-  const limit = known ? VERY_COMMON : COMMON;
-  const short = w.length === 3; // three letters: only swapped pairs (nwe -> new)
-  const found = new Map<string, number>();
-  const consider = (c: string, firstMayChange = false) => {
-    // People rarely miss the first key of a word, so a guess keeps it.
-    if (!firstMayChange && c[0] !== w[0]) return;
-    // Plurals and endings are the writer's choice, not a typo.
-    if (c + "s" === w || w + "s" === c || c + "d" === w || w + "d" === c) return;
-    const r = rank!.get(c);
-    if (r !== undefined && r < limit) found.set(c, r);
-  };
-  for (let i = 0; i < w.length; i++) {
-    const a = w.slice(0, i);
-    const b = w.slice(i + 1);
-    if (i < w.length - 1) consider(a + w[i + 1] + w[i] + w.slice(i + 2), i === 0); // swapped
-    if (short) continue;
-    // An extra key: only a doubled letter if the word is real but rare, and
-    // never just the last letter unless it was doubled ("pleasee").
-    const doubled = w[i] === w[i - 1] || w[i] === w[i + 1];
-    if (doubled || (!known && i < w.length - 1)) consider(a + b);
-    if (!known) for (const ch of NEAR.get(w[i]) ?? "") consider(a + ch + b); // a neighbouring key
-  }
-  if (!short)
-    for (let i = 1; i <= w.length; i++)
-      for (const ch of LETTERS) consider(w.slice(0, i) + ch + w.slice(i)); // a missed key
-  // A rare real word only gives way to one far more common (20 times or more).
-  if (known) for (const [c, r] of found) if (own! < r * 20) found.delete(c);
-  if (found.size === 0) return known ? null : twoSlips(w);
-  const best = [...found].sort((x, y) => x[1] - y[1]);
-  // One clear winner: at least three times as common as the runner-up.
-  if (best.length > 1 && best[1][1] < best[0][1] * 3 + 50) return null;
-  return best[0][0];
-}
-
-/** Common words grouped by first letter, for the two-slip search. */
-let byFirst: Map<string, string[]> | null = null;
-const TWO_SLIPS_TOP = 15000;
-
-/** Edit distance where a swapped pair counts as one slip; gives up past `max`. */
-function slips(a: string, b: string, max: number): number {
-  if (Math.abs(a.length - b.length) > max) return max + 1;
-  let prev2: number[] = [];
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    const cur = [i];
-    let rowMin = i;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
-      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, prev2[j - 2] + 1);
-      cur.push(v);
-      if (v < rowMin) rowMin = v;
-    }
-    if (rowMin > max) return max + 1;
-    prev2 = prev;
-    prev = cur;
-  }
-  return prev[b.length];
-}
-
-/** Two slips in a longer word ("definatly", "acommodate"): only towards common words. */
-function twoSlips(w: string): string | null {
-  if (w.length < 6 || !rank) return null;
-  if (!byFirst) {
-    byFirst = new Map();
-    for (const [word, r] of rank) {
-      if (r >= TWO_SLIPS_TOP || word.length < 5) continue;
-      const list = byFirst.get(word[0]) ?? [];
-      list.push(word);
-      byFirst.set(word[0], list);
-    }
-  }
-  const found: [string, number][] = [];
-  for (const c of byFirst.get(w[0]) ?? []) {
-    if (slips(w, c, 2) <= 2) found.push([c, rank.get(c)!]);
-  }
-  if (found.length === 0) return null;
-  found.sort((x, y) => x[1] - y[1]);
-  if (found.length > 1 && found[1][1] < found[0][1] * 5 + 100) return null;
-  return found[0][0];
-}
-
 /* ------------------------------------------------------------ the whole decision */
 
 export interface Correction {
@@ -220,9 +135,9 @@ export function correct(before: string, word: string, ender: string): Correction
     const fix = FIXES.get(lower);
     if (fix) {
       out = fix.startsWith("I") ? fix : applyCasing(fix, casing);
-    } else if (casing === "lower") {
+    } else if (casing === "lower" && lex && /^[a-z]+$/.test(lower)) {
       // A capital the writer typed themselves usually means a name: no guessing.
-      const g = guess(lower);
+      const g = guessWord(lower, previousWord(before), lex);
       if (g) out = applyCasing(g, casing);
     }
   }
@@ -231,6 +146,12 @@ export function correct(before: string, word: string, ender: string): Correction
   if (sentence && /^\p{Ll}/u.test(out)) out = capitalise(out);
   if (out === word) return null;
   return { text: out, capitalOnly: out.toLowerCase() === word.toLowerCase() };
+}
+
+/** The word just before (lower case), if only a space separates them. */
+function previousWord(before: string): string | null {
+  const m = /([a-z']+) $/i.exec(before);
+  return m ? m[1].toLowerCase() : null;
 }
 
 /**
