@@ -74,6 +74,22 @@ how you typed it. Quill leaves that word alone from then on. Switch autocorrect
 off or on with **Autocorrect** in the top shelf. It all happens on your PC, with
 no internet needed.
 
+## Dictation
+
+Press **Ctrl+Shift+D** (or **Dictate** on the top shelf) and speak; press it
+again, or **Esc**, to stop. While Quill listens, the cursor swells with your
+voice, and each phrase appears a moment after you pause, faint at first, then
+settling into ink. Dictated words take the Shelf's style, like typed ones, and
+**Ctrl+Z** takes back a whole phrase.
+
+You can say **new paragraph**, **new line**, **scratch that** (removes the last
+phrase) and **stop listening**. Dictation works in quick capture too.
+
+It all happens on your PC: the first time, Quill offers to download its speech
+model (Whisper base.en, about 148 MB) into its app data folder, and from then on
+dictation works offline and no sound leaves the computer. If Quill hears only
+silence, check Windows **Settings > Privacy > Microphone**.
+
 ## Where your writing lives
 
 Everything is saved in `Documents\Quill`, in the folders you make in the library.

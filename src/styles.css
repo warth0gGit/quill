@@ -461,3 +461,37 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
 @media (prefers-reduced-motion: reduce) {
   .ed .ac-fix { animation: none; }
 }
+
+/* ------------------------------------------------------------ dictation */
+/* While Quill listens, the cursor stops breathing and swells with your voice
+   (--lvl, 0..1, from the microphone). While a phrase is being turned into
+   words it pulses gently. New words arrive faint and settle into ink. */
+.caret.listening.on {
+  animation: none; opacity: 1;
+  width: calc(2.5px + var(--lvl, 0) * 1.5px);
+  box-shadow: 0 0 calc(5px + var(--lvl, 0) * 16px) calc(var(--lvl, 0) * 3px) var(--glow);
+  transition: transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1), height 170ms ease, width 90ms linear, box-shadow 90ms linear, opacity 0.15s;
+}
+.caret.listening.hearing.on { animation: hearing 0.9s ease-in-out infinite; }
+@keyframes hearing { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.ed .dict-new { animation: settle 0.9s ease-out both; }
+@keyframes settle { from { opacity: 0.3; } to { opacity: 1; } }
+
+.dict-offer {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 30;
+  width: min(440px, calc(100vw - 32px)); background: var(--paper); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12); font-size: 14px; line-height: 1.5;
+}
+.dict-offer p { margin: 0 0 12px; }
+.dict-offer b { font-weight: 600; }
+.dict-offer .row { display: flex; justify-content: flex-end; gap: 8px; }
+.dict-offer button {
+  font: inherit; font-size: 13px; border-radius: 6px; padding: 5px 14px; cursor: pointer;
+  border: 1px solid var(--rule); background: transparent; color: var(--ink);
+}
+.dict-offer button.go { background: var(--cursor); border-color: var(--cursor); color: var(--paper); }
+.dict-offer button:focus-visible { outline: 2px solid var(--cursor); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .caret.listening.hearing.on, .ed .dict-new { animation: none; }
+}

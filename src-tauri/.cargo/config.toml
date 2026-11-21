@@ -1,0 +1,9 @@
+# The speech model (whisper.cpp) is compiled for the CPUs Quill runs on, not
+# for whichever machine happens to build it: AVX2 covers PCs from about 2013 on.
+[env]
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+WHISPER_DONT_GENERATE_BINDINGS = "1"
