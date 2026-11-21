@@ -47,11 +47,11 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      # Every installer gets its own version (0.2.<run number>), so a newer
-      # build always replaces the one installed, and Quill shows which it is.
+      # Every installer gets its own version (<major>.<minor>.<run number>), so a
+      # newer build always replaces the one installed, and Quill shows which it is.
       - name: Stamp the build number into the version
         shell: bash
-        run: npm version "0.2.${{ github.run_number }}" --no-git-tag-version
+        run: npm version "$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')").${{ github.run_number }}" --no-git-tag-version
       - run: npx tauri build --bundles nsis,msi
       - uses: actions/upload-artifact@v4
         with:

@@ -49,6 +49,11 @@ body {
 body[data-size="small"] { font-size: 16.5px; }
 body[data-size="large"] { font-size: 22px; }
 
+/* ------------------------------------------------------------ start-up splash */
+#q-splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: var(--paper); color: var(--ink); }
+#q-splash .q-mark { width: min(200px, 26vmin); height: auto; opacity: 0; }
+#q-splash #ink-line { stroke-dasharray: 1; stroke-dashoffset: 1; }
+
 /* ------------------------------------------------------------ the page */
 
 .page { height: 100%; overflow-y: auto; padding: 12vh 24px 30vh; cursor: text; }
@@ -314,7 +319,7 @@ body.pages .ed { padding: 96px; min-height: 1056px; }
   html, body { height: auto; overflow: visible; background: #fff !important; color: var(--ink); }
   .page { height: auto; overflow: visible; padding: 0 !important; }
   .sheets { width: auto !important; max-width: none !important; }
-  .caret, .tb, .status, .menu, .print-sheet, .sheet-layer, .page-gap, .library { display: none !important; }
+  .caret, .tb, .status, .menu, .print-sheet, .sheet-layer, .page-gap, .library, #q-splash { display: none !important; }
   .ed { padding: 0 !important; min-height: 0 !important; }
   .ed p, .ed li { orphans: 1; widows: 1; } /* break exactly where the on-screen sheets do */
   body.print-black .ed, body.print-black .ed [data-ink] { color: #000 !important; }

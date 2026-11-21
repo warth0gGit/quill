@@ -24,6 +24,7 @@ import {
   type Spacing,
 } from "./storage";
 import { createLibrary } from "./library";
+import { runSplash } from "./splash";
 import { EditorState } from "@tiptap/pm/state";
 import { bar, icons, MOD } from "./ui";
 import * as os from "./platform";
@@ -684,7 +685,8 @@ void (async () => {
     /* only used for Show in File Explorer */
   }
 })();
-flash(`Quill ${__APP_VERSION__}`);
+// The splash holds until Spectral has loaded, so the page never flashes a fallback font.
+void runSplash(Promise.race([document.fonts?.ready ?? Promise.resolve(), new Promise((r) => setTimeout(r, 2500))]));
 document.fonts?.ready.then(() => {
   if (pages.enabled) pages.recompute();
   placeCaret();
