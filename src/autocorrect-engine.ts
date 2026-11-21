@@ -32,13 +32,16 @@ export function loadWords(text: string) {
     }
     m.set(w, i++);
   }
-  // Hand-picked typos are never "real words", even if people type them a lot.
+  // Hand-picked typos are never "real words", even if people type them a lot,
+  // and nor are the halves word counts leave when they split "couldn't".
   for (const k of FIXES.keys()) m.delete(k);
+  for (const k of HALVES) m.delete(k);
   rank = m;
   lex = { rank: m, notReal, byFirst: buildIndex(m), pairs: lex?.pairs ?? pendingPairs };
 }
 
 let lex: Lexicon | null = null;
+const HALVES = "couldn wouldn shouldn didn doesn isn wasn aren hasn weren hadn mustn needn mightn ain".split(" ");
 const notReal = new Set<string>();
 
 /** Word pairs, one per line: "prev next count" (count in thousands). */

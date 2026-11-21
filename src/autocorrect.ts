@@ -223,6 +223,13 @@ export const Autocorrect = Extension.create({
           handleTextInput(view, from, to, text) {
             if (from !== to || !isEnder(text) || !autocorrectOn()) return false;
             if (view.composing) return false;
+            // A second space in a row (a slip of the thumb) is dropped, except
+            // at the start of a line, where it might be lining something up.
+            if (text === " ") {
+              const $f = view.state.doc.resolve(from);
+              const prev = $f.parent.textBetween(Math.max(0, $f.parentOffset - 1), $f.parentOffset, undefined, "\n");
+              if (prev === " " && $f.parentOffset > 1) return true;
+            }
             return fixBefore(view, from, text);
           },
         },

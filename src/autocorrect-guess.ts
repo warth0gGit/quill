@@ -39,7 +39,7 @@ export const TUNE = {
   /** how much one unit of slip counts against how common a word is */
   slipWeight: 4.5,
   /** the best guess must beat the runner-up by this much */
-  margin: 1.5,
+  margin: 1.25,
   /** a rare dictionary word must be this much less likely than the guess to change */
   keepBias: 3,
   /** the same for rare words that aren't in the dictionary ("reciever", "appart") */
@@ -48,6 +48,8 @@ export const TUNE = {
   maxSlip: 2.6,
   /** how much the word before counts */
   contextWeight: 1.4,
+  /** hitting the key next to the right one */
+  nearKey: 0.8,
 };
 
 let buf = new Float64Array(256);
@@ -90,7 +92,9 @@ export function slipCost(t: string, c: string, max = 4): number {
 }
 
 function subCost(a: string, b: string): number {
-  if (near(a, b)) return 1.0;
+  if (b === "'") return 0.9; // a letter where the apostrophe goes: shouldnbt
+  if (a === "'") return 1.6;
+  if (near(a, b)) return TUNE.nearKey;
   if (VOWELS.has(a) && VOWELS.has(b)) return 1.2; // spelling by ear: seperate, definate
   if (SOUNDS.has(a + b)) return 1.3;
   return 2.0;
@@ -107,6 +111,7 @@ function extraCost(t: string, i: number): number {
 /** Left out c[j]. */
 function missingCost(c: string, j: number): number {
   const ch = c[j];
+  if (ch === "'") return 0.3; // a dropped apostrophe: wasnt, theyre
   if (c[j - 1] === ch || c[j + 1] === ch) return 0.7; // one of a double: ocassion
   if (VOWELS.has(ch)) return 1.1; // a skipped vowel: probly
   return 1.3;
@@ -132,7 +137,7 @@ export const RARE = 50000;
 export function buildIndex(rank: Map<string, number>): Map<string, string[]> {
   const byFirst = new Map<string, string[]>();
   for (const [w, r] of rank) {
-    if (r >= TARGETS || w.includes("'")) continue;
+    if (r >= TARGETS) continue;
     const k = w[0] + w.length;
     let list = byFirst.get(k);
     if (!list) byFirst.set(k, (list = []));
@@ -157,6 +162,11 @@ function candidates(w: string, lex: Lexicon): Set<string> {
     if (b) add(a + b.slice(1));
     if (b.length > 1) add(a + b[1] + b[0] + b.slice(2));
     for (const ch of LETTERS) {
+      add(a + ch + b);
+      if (b) add(a + ch + b.slice(1));
+    }
+    // The apostrophe, left out or hit as a letter: wasnt, shouldnbt.
+    for (const ch of "'") {
       add(a + ch + b);
       if (b) add(a + ch + b.slice(1));
     }
@@ -185,7 +195,10 @@ function bagDistance(bag: Int8Array, c: string): number {
   let extra = 0;
   for (let i = 0; i < c.length; i++) {
     const k = c.charCodeAt(i) - 97;
-    if (k < 0 || k > 25) return 99;
+    if (k < 0 || k > 25) {
+      extra += 0.5;
+      continue;
+    }
     if (b[k] > 0) b[k]--;
     else extra++;
   }
@@ -212,6 +225,10 @@ function contextBonus(prev: string | null, c: string, lex: Lexicon): number {
  * The word `w` (lower case, letters only) probably meant, or null.
  * `prev` is the word before it, lower case, if any.
  */
+/** For tests: see the top candidates and their scores. */
+export let debugHook: ((w: string, top: [string, number][], own: number | undefined) => void) | null = null;
+export const setDebugHook = (f: typeof debugHook) => (debugHook = f);
+
 export function guessWord(w: string, prev: string | null, lex: Lexicon, next: string | null = null): string | null {
   if (w.length < 3) return null;
   const own = lex.rank.get(w);
@@ -230,6 +247,7 @@ export function guessWord(w: string, prev: string | null, lex: Lexicon, next: st
   }
   if (scored.length === 0) return null;
   scored.sort((x, y) => x[1] - y[1]);
+  if (debugHook) debugHook(w, scored.slice(0, 5), own);
   const [best, s] = scored[0];
   if (scored.length > 1 && scored[1][1] - s < TUNE.margin) return null;
   if (own !== undefined) {
